@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createHealthEvent } from "./actions";
+import { createAppointment, createHealthEvent, createMedication } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -30,6 +30,12 @@ function eventForm(values: Record<string, string> = {}) {
 function appointmentForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ title: "Fictional clinic visit", startsAt: "2026-11-21T09:00", startsAtOffset: "-330", endsAt: "", endsAtOffset: "0", location: "Demo clinic", ...values })) form.set(key, value);
+  return form;
+}
+
+function medicationForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ medicineName: "Fictional sample medicine", genericName: "", strength: "As recorded", route: "By mouth", instructions: "Fictional directions", status: "active", visibility: "general", ...values })) form.set(key, value);
   return form;
 }
 
@@ -152,5 +158,66 @@ describe("appointment server action", () => {
       created_by: "user-1",
     }));
     expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+  });
+});
+
+describe("medication server action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { relationship_role: "patient", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert: vi.fn().mockResolvedValue({ error: null }) });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("saves a self-reported medicine note through the protected table", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { relationship_role: "patient", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert });
+
+    const result = await createMedication(patientId, { status: "idle", message: "" }, medicationForm());
+
+    expect(result).toEqual({ status: "success", message: "Medicine note saved as unverified." });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      patient_id: patientId,
+      medicine_name: "Fictional sample medicine",
+      status: "active",
+      visibility: "general",
+      created_by: "user-1",
+    }));
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+  });
+
+  it("rejects sensitive medicine notes outside an adolescent profile", async () => {
+    const insert = vi.fn();
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { relationship_role: "patient", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert });
+
+    const result = await createMedication(patientId, { status: "idle", message: "" }, medicationForm({ visibility: "sensitive_adolescent" }));
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/adolescent profile/i);
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("requires active write access before medication entry", async () => {
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : query({ data: { status: "pending", can_read: false, can_write: false }, error: null }));
+
+    const result = await createMedication(patientId, { status: "idle", message: "" }, medicationForm());
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/active write access/i);
+    expect(mockSupabase.from).not.toHaveBeenCalledWith("medication_records");
   });
 });

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export type HealthEventFormState = { status: "idle" | "error" | "success"; message: string };
 export type AppointmentFormState = HealthEventFormState;
+export type MedicationFormState = HealthEventFormState;
 
 const localDateTimePattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 
@@ -52,6 +53,17 @@ const appointmentSchema = z.object({
   if (value.endsAt && localDateTimeToUtc(value.endsAt, value.endsAtOffset) <= localDateTimeToUtc(value.startsAt, value.startsAtOffset)) {
     context.addIssue({ code: "custom", path: ["endsAt"], message: "End time must be after the start time." });
   }
+});
+
+const medicationSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  medicineName: z.string().trim().min(2, "Enter the medicine name as written on its package or record.").max(120, "Keep the name under 120 characters."),
+  genericName: z.string().trim().max(120, "Keep the generic name under 120 characters.").optional().default(""),
+  strength: z.string().trim().max(80, "Keep the strength under 80 characters.").optional().default(""),
+  route: z.string().trim().max(80, "Keep the route under 80 characters.").optional().default(""),
+  instructions: z.string().trim().max(500, "Keep the directions under 500 characters.").optional().default(""),
+  status: z.enum(["active", "historical"]),
+  visibility: z.enum(["general", "sensitive_adolescent"]),
 });
 
 export async function createHealthEvent(patientId: string, _previous: HealthEventFormState, formData: FormData): Promise<HealthEventFormState> {
@@ -138,4 +150,49 @@ export async function createAppointment(patientId: string, _previous: Appointmen
   if (error) return { status: "error", message: "The appointment could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Appointment saved." };
+}
+
+export async function createMedication(patientId: string, _previous: MedicationFormState, formData: FormData): Promise<MedicationFormState> {
+  const parsed = medicationSchema.safeParse({
+    patientId,
+    medicineName: formData.get("medicineName"),
+    genericName: formData.get("genericName") ?? "",
+    strength: formData.get("strength") ?? "",
+    route: formData.get("route") ?? "",
+    instructions: formData.get("instructions") ?? "",
+    status: formData.get("status"),
+    visibility: formData.get("visibility"),
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the medicine details and try again." };
+
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before adding a medicine note." };
+
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", parsed.data.patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", parsed.data.patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) {
+    return { status: "error", message: "You do not have active write access to this profile." };
+  }
+  if (parsed.data.visibility === "sensitive_adolescent" && profile.life_stage !== "adolescent") {
+    return { status: "error", message: "Sensitive adolescent medicine notes can only be added to an adolescent profile." };
+  }
+
+  const { error } = await supabase.from("medication_records").insert({
+    patient_id: parsed.data.patientId,
+    medicine_name: parsed.data.medicineName,
+    generic_name: parsed.data.genericName || null,
+    strength: parsed.data.strength || null,
+    route: parsed.data.route || null,
+    instructions: parsed.data.instructions || null,
+    status: parsed.data.status,
+    visibility: parsed.data.visibility,
+    created_by: user.id,
+  });
+
+  if (error) return { status: "error", message: "The medicine note could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  return { status: "success", message: "Medicine note saved as unverified." };
 }
