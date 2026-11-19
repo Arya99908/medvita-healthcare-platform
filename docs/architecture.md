@@ -10,10 +10,10 @@ flowchart LR
   Account --> RLS[Postgres row-level security]
   RLS --> Records[Profile and patient records]
   RLS --> Storage[Private medical document bucket]
-  Server[Next.js server routes] -. not implemented .-> AI[Configured AI provider]
+  Server[Next.js server actions] -. synthetic data only .-> AI[Optional Vercel AI Gateway]
 ```
 
-The app is a presentation demo that runs without credentials. Stage switching moves among an infant, child, adolescent girl, adolescent boy, adult, and senior. The timed walkthrough is intended for presentations. Demo profiles are bundled in the client; local notes use browser storage, while uploaded filename samples stay in page memory. No real health data is sent to a provider.
+The app is a presentation demo that runs without credentials. Stage switching moves among an infant, child, adolescent girl, adolescent boy, adult, and senior. The timed walkthrough is intended for presentations. Demo profiles are bundled in the client; local notes use browser storage, while uploaded filename samples stay in page memory. The AI summary action accepts only a stage identifier and uses server-defined fictional content. Without gateway configuration it returns an explicitly labeled static sample. Live provider calls require both server-side gateway configuration and a signed-in user. No real health data is sent to a provider.
 
 The app uses Next.js App Router, strict TypeScript, Tailwind CSS, and Lucide icons. Supabase browser/server clients, a Next.js 16 `proxy.ts` session-refresh hook, and a PKCE callback route are configured for the dedicated `Med-Vita` Supabase project.
 
@@ -34,7 +34,7 @@ The five migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlx
 | Area | State | Notes |
 |---|---|---|
 | Accessible life-stage presentation demo | Implemented | Six profiles, keyboard tabs, timed walkthrough, larger text, contrast control |
-| Demo interactions | Implemented | Local notes and age-aware care logs, medicine toggles, wellness checklist, appointment samples, fictional JSON export |
+| Demo interactions | Implemented | Local notes and age-aware care logs, medicine toggles, wellness checklist, appointment samples, fictional JSON export, synthetic AI summary with static fallback |
 | Account and profile entry | Implemented (limited) | Email/password sign-in, sign-up, and reset; list RLS-visible profiles; create adult self-profile or submit a pending minor guardian request; download an RLS-filtered JSON export; add/view unverified RLS-protected timeline notes, infant/child feeding, bowel, vomiting, and growth records, appointment plans, and self-reported medicine notes; upload/list supported private files |
 | Supabase SSR client setup | Configured | Cookie-based clients, `proxy.ts`, and PKCE callback |
 | Core database schema | Applied | Five migrations; patient, relationships, consent, clinical, medication, documents, calendar, wellness, AI, alerts, notifications, RLS-aware account export |
@@ -42,9 +42,9 @@ The five migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlx
 | RLS access-isolation verification | Passing | 49 fictional role/consent/export/timeline/symptom/child-care/appointment/medication/document-metadata cases run transactionally; standard `supabase test db --linked` still requires local Docker/Podman |
 | Patient record management | Partial | RLS-protected timeline-note and symptom-observation create/read; infant/child feeding, bowel, vomiting, and growth-record create/read; appointment-plan create/read/status update; self-reported medicine-note create/read/current-past status update; private PDF/JPG/PNG document upload/read up to 4 MB; add forms collapse into keyboard-accessible disclosures; note detail edits, growth percentiles, OCR, external clinic actions, medication schedules/logs, and role sharing workflows remain |
 | Role-specific care workflows | Not implemented | Doctor, caregiver, clinic, and platform admin screens remain |
-| AI/OCR/notifications/calendar integrations | Not implemented | Requires provider setup, backend paths, and reviewable error states |
+| AI/OCR/notifications/calendar integrations | Partial | Synthetic-only structured AI summary path via optional Vercel AI Gateway; provider credentials are not configured or live-verified. Real-record AI, OCR, notifications, and calendar connections remain unimplemented |
 | Emergency demo | Implemented locally | User-initiated `tel:` links and fictional quick-reference card; no contact alert, location sharing, dispatch, or call confirmation |
-| Local checks | Passing | TypeScript, lint, 41 tests across five files (including timeline, symptom, child-care, appointment, medicine-note, and document-upload actions), production build |
+| Local checks | Passing | TypeScript, lint, 43 tests across six files (including synthetic AI summary, timeline, symptom, child-care, appointment, medicine-note, and document-upload actions), production build |
 | GitHub | Complete | Private `Arya99908/medvita-healthcare-platform`; credentials and patient records excluded |
 | Vercel | Deployed | Protected production alias and preview; deployment protection requires Vercel team authentication |
 
