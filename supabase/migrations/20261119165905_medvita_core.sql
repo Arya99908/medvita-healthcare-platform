@@ -261,8 +261,17 @@ create table public.notifications (
 create table public.patient_sharing_sessions (
   id uuid primary key default gen_random_uuid(), patient_id uuid not null references public.patient_profiles(id) on delete cascade,
   created_by uuid not null references auth.users(id) on delete cascade, token_hash text not null unique,
+  visibility text not null default 'general' check(visibility in ('general','sensitive_adolescent')),
   expires_at timestamptz not null, revoked_at timestamptz, access_scope text[] not null default '{general}', created_at timestamptz not null default now()
 );
+
+-- Every patient-scoped record can be explicitly restricted when it contains sensitive adolescent information.
+do $$ declare tbl text; begin
+  foreach tbl in array array['medical_conditions','allergies','vitals','feeding_records','bowel_movement_records','vomiting_records','growth_records','medication_records','medication_schedules','medication_administration_logs','medical_documents','extracted_document_data','laboratory_results','hospital_visits','hospital_admissions','appointments','caregiver_tasks','wellness_plans','wellness_records','ai_reports','ai_analysis_sources','emergency_contacts','emergency_alerts'] loop
+    execute format('alter table public.%I add column visibility text not null default ''general'' check(visibility in (''general'',''sensitive_adolescent''))',tbl);
+  end loop;
+end $$;
+alter table public.notifications add column visibility text not null default 'general' check(visibility in ('general','sensitive_adolescent'));
 
 create index patient_relationships_user_idx on public.patient_relationships(user_id,status);
 create index patient_relationships_patient_idx on public.patient_relationships(patient_id,status);
@@ -343,7 +352,6 @@ create policy "patient manages consent" on public.consent_records for all to aut
 create policy "linked users read permissions" on public.access_permissions for select to authenticated using(user_id=auth.uid() or public.has_patient_access(patient_id,'write'));
 create policy "patient manages permissions" on public.access_permissions for all to authenticated using(public.has_patient_access(patient_id,'write')) with check(public.has_patient_access(patient_id,'write') and granted_by=auth.uid());
 create policy "users read own audit logs" on public.audit_logs for select to authenticated using(actor_user_id=auth.uid());
-create policy "users create own audit logs" on public.audit_logs for insert to authenticated with check(actor_user_id=auth.uid());
 create policy "authenticated users can read verified doctor directory" on public.doctors for select to authenticated using(verification_status='verified' or user_id=auth.uid());
 create policy "doctors can create unverified profile" on public.doctors for insert to authenticated with check(user_id=auth.uid() and verification_status<>'verified');
 create policy "doctors update own unverified profile" on public.doctors for update to authenticated using(user_id=auth.uid() and verification_status<>'verified') with check(user_id=auth.uid() and verification_status<>'verified');
@@ -356,27 +364,37 @@ do $$ declare tbl text; begin
     execute format('create policy "linked readers can read" on public.%I for select to authenticated using(public.has_patient_access(patient_id,''read'') and (coalesce(to_jsonb(%I)->>''visibility'',''general'')<>''sensitive_adolescent'' or public.has_sensitive_access(patient_id)))',tbl,tbl);
     execute format('create policy "linked writers can insert" on public.%I for insert to authenticated with check(public.has_patient_access(patient_id,''write'') and (coalesce(to_jsonb(%I)->>''visibility'',''general'')<>''sensitive_adolescent'' or public.has_sensitive_access(patient_id)) and (to_jsonb(%I)->>''created_by'' is null or to_jsonb(%I)->>''created_by''=auth.uid()::text))',tbl,tbl,tbl,tbl);
     execute format('create policy "linked writers can update" on public.%I for update to authenticated using(public.has_patient_access(patient_id,''write'') and (coalesce(to_jsonb(%I)->>''visibility'',''general'')<>''sensitive_adolescent'' or public.has_sensitive_access(patient_id))) with check(public.has_patient_access(patient_id,''write'') and (coalesce(to_jsonb(%I)->>''visibility'',''general'')<>''sensitive_adolescent'' or public.has_sensitive_access(patient_id)))',tbl,tbl,tbl);
-    execute format('create policy "linked writers can delete" on public.%I for delete to authenticated using(public.has_patient_access(patient_id,''write''))',tbl);
+    execute format('create policy "linked writers can delete" on public.%I for delete to authenticated using(public.has_patient_access(patient_id,''write'') and (coalesce(to_jsonb(%I)->>''visibility'',''general'')<>''sensitive_adolescent'' or public.has_sensitive_access(patient_id)))',tbl,tbl);
   end loop;
 end $$;
 
 alter table public.notification_preferences enable row level security;
 create policy "users manage own notification preferences" on public.notification_preferences for all to authenticated using(user_id=auth.uid()) with check(user_id=auth.uid());
 alter table public.notifications enable row level security;
-create policy "users read own notifications" on public.notifications for select to authenticated using(user_id=auth.uid() and (patient_id is null or public.has_patient_access(patient_id,'read')));
-create policy "users update own notifications" on public.notifications for update to authenticated using(user_id=auth.uid()) with check(user_id=auth.uid());
-create policy "users create own notifications" on public.notifications for insert to authenticated with check(user_id=auth.uid() and (patient_id is null or public.has_patient_access(patient_id,'write')));
+create policy "users read own notifications" on public.notifications for select to authenticated using(user_id=auth.uid() and (patient_id is null or (public.has_patient_access(patient_id,'read') and (visibility<>'sensitive_adolescent' or public.has_sensitive_access(patient_id)))));
+create policy "users update own notifications" on public.notifications for update to authenticated using(user_id=auth.uid() and (patient_id is null or (public.has_patient_access(patient_id,'read') and (visibility<>'sensitive_adolescent' or public.has_sensitive_access(patient_id))))) with check(user_id=auth.uid() and (patient_id is null or (public.has_patient_access(patient_id,'read') and (visibility<>'sensitive_adolescent' or public.has_sensitive_access(patient_id)))));
+create policy "users create own notifications" on public.notifications for insert to authenticated with check(user_id=auth.uid() and (patient_id is null or (public.has_patient_access(patient_id,'write') and (visibility<>'sensitive_adolescent' or public.has_sensitive_access(patient_id)))));
 
 -- Private bucket. Object paths follow <patient UUID>/<file name>.
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values('medical-documents','medical-documents',false,10485760,array['application/pdf','image/jpeg','image/png'])
 on conflict(id) do update set public=false,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
 create policy "linked readers can read medical files" on storage.objects for select to authenticated
-  using(bucket_id='medical-documents' and public.has_patient_access(((storage.foldername(name))[1])::uuid,'read'));
+  using(bucket_id='medical-documents' and ((storage.foldername(name))[2] is null or (storage.foldername(name))[2] in ('general','sensitive_adolescent'))
+    and public.has_patient_access(((storage.foldername(name))[1])::uuid,'read')
+    and ((storage.foldername(name))[2] is distinct from 'sensitive_adolescent' or public.has_sensitive_access(((storage.foldername(name))[1])::uuid)));
 create policy "linked writers can upload medical files" on storage.objects for insert to authenticated
-  with check(bucket_id='medical-documents' and public.has_patient_access(((storage.foldername(name))[1])::uuid,'manage_documents'));
+  with check(bucket_id='medical-documents' and ((storage.foldername(name))[2] is null or (storage.foldername(name))[2] in ('general','sensitive_adolescent'))
+    and public.has_patient_access(((storage.foldername(name))[1])::uuid,'manage_documents')
+    and ((storage.foldername(name))[2] is distinct from 'sensitive_adolescent' or public.has_sensitive_access(((storage.foldername(name))[1])::uuid)));
 create policy "linked writers can update medical files" on storage.objects for update to authenticated
-  using(bucket_id='medical-documents' and public.has_patient_access(((storage.foldername(name))[1])::uuid,'manage_documents'))
-  with check(bucket_id='medical-documents' and public.has_patient_access(((storage.foldername(name))[1])::uuid,'manage_documents'));
+  using(bucket_id='medical-documents' and ((storage.foldername(name))[2] is null or (storage.foldername(name))[2] in ('general','sensitive_adolescent'))
+    and public.has_patient_access(((storage.foldername(name))[1])::uuid,'manage_documents')
+    and ((storage.foldername(name))[2] is distinct from 'sensitive_adolescent' or public.has_sensitive_access(((storage.foldername(name))[1])::uuid)))
+  with check(bucket_id='medical-documents' and ((storage.foldername(name))[2] is null or (storage.foldername(name))[2] in ('general','sensitive_adolescent'))
+    and public.has_patient_access(((storage.foldername(name))[1])::uuid,'manage_documents')
+    and ((storage.foldername(name))[2] is distinct from 'sensitive_adolescent' or public.has_sensitive_access(((storage.foldername(name))[1])::uuid)));
 create policy "linked writers can delete medical files" on storage.objects for delete to authenticated
-  using(bucket_id='medical-documents' and public.has_patient_access(((storage.foldername(name))[1])::uuid,'manage_documents'));
+  using(bucket_id='medical-documents' and ((storage.foldername(name))[2] is null or (storage.foldername(name))[2] in ('general','sensitive_adolescent'))
+    and public.has_patient_access(((storage.foldername(name))[1])::uuid,'manage_documents')
+    and ((storage.foldername(name))[2] is distinct from 'sensitive_adolescent' or public.has_sensitive_access(((storage.foldername(name))[1])::uuid)));

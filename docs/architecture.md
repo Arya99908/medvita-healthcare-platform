@@ -1,55 +1,56 @@
 # MedVita architecture and delivery status
 
-## Application shape
+## Current application shape
 
 ```mermaid
 flowchart LR
   Browser[Responsive Next.js App Router] --> Demo[Six fictional local profiles]
-  Browser --> Auth[Supabase Auth via SSR cookies]
-  Auth --> RLS[Postgres row-level security]
-  RLS --> Records[Patient health records]
+  Browser --> Auth[Supabase Auth]
+  Auth --> Account[Authenticated profile route]
+  Account --> RLS[Postgres row-level security]
+  RLS --> Records[Profile and patient records]
   RLS --> Storage[Private medical document bucket]
-  Server[Next.js server routes] -. not connected yet .-> AI[Configured AI provider]
+  Server[Next.js server routes] -. not implemented .-> AI[Configured AI provider]
 ```
 
-The browser demo is deliberately usable without accounts or secrets. Its fictional profiles and edits are separate from hosted patient data. Demo notes use local storage; selected file names remain in page memory, and no file contents leave the browser.
+The app is a presentation demo that runs without credentials. Stage switching moves among an infant, child, adolescent girl, adolescent boy, adult, and senior. The timed walkthrough is intended for presentations. Demo profiles are bundled in the client; local notes use browser storage, while uploaded filename samples stay in page memory. No real health data is sent to a provider.
 
-The application shell uses Next.js App Router, strict TypeScript, Tailwind CSS support, Lucide icons, and a small reusable UI layer. Supabase clients use the SSR cookie pattern: a browser client for client components, a request-scoped server client for server work, and the Next.js 16 `proxy.ts` convention for auth-session refresh.
+The app uses Next.js App Router, strict TypeScript, Tailwind CSS, and Lucide icons. Supabase browser/server clients, a Next.js 16 `proxy.ts` session-refresh hook, and a PKCE callback route are configured for the dedicated `Med-Vita` Supabase project.
 
-## Data and access boundaries
+## Intended data and access boundaries
 
 - `profiles` and `user_roles` are tied to authenticated Supabase users.
-- A `patient_profile` is not a user account. Access is through active `patient_relationships` with explicit read/write flags.
+- A `patient_profile` is separate from an account. Access is through active `patient_relationships` with explicit read/write flags.
 - Clinician access also requires an `access_permissions` row.
-- Sensitive adolescent rows use `visibility = 'sensitive_adolescent'`; the RLS helper requires the patient relationship or a matching active consent record. Guardian status alone does not grant this scope.
-- Medical documents use a private `medical-documents` bucket with patient-folder RLS policies.
-- Uploaded data and extracted OCR fields remain unverified until reviewed.
-- Synthetic sample data is not inserted into real patient tables.
+- Sensitive adolescent rows use `visibility = 'sensitive_adolescent'`; the draft RLS helper requires patient access or a matching active consent record. Guardian status alone is not intended to grant this scope.
+- Medical documents use a private `medical-documents` bucket with patient-folder policies.
+- OCR output is not a verified medical fact until a person reviews it.
+- Synthetic presentation profiles are not inserted into patient tables.
 
-The SQL migration is a reviewed draft and has **not** been applied to a live or local database. It must be exercised against a dedicated MedVita project and its RLS policies audited before using real records.
+The three migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlxnmsiacbqpl`, `ap-south-1`). All 40 public tables have RLS enabled; the medical-document bucket is private. After the security helper migration, the Supabase security advisor reported no findings. A transaction-based SQL suite checks patient, guardian, clinician, sensitive-consent, profile-creation, and pending-guardian boundaries with fictional fixture identities and rolls them back. `supabase db lint --linked` reports no schema errors.
 
-## Current delivery checklist
+## Delivery checklist
 
 | Area | State | Notes |
 |---|---|---|
-| Accessible life-stage presentation demo | Implemented locally | Infant, child, teen girl, teen boy, adult, and senior; tabs, walkthrough, font and contrast controls |
-| Demo interactions | Implemented locally | Local notes, sample medication toggles, wellness checklist, appointment demo, fictional report export |
-| Account entry | Implemented locally | Email/password sign-in and sign-up UI; disabled until public Supabase URL/key are configured |
-| Supabase SSR client setup | Prepared | Cookie-based server/client clients and `proxy.ts`; not connected to a project |
-| Core database schema | Drafted | Patient, relationship, consent, clinical, medication, document, calendar, wellness, AI-report, alert, and notification tables |
-| Synthetic database seeding | Deferred | Demo data stays local until isolated demo accounts can be designed and tested |
-| Live CRUD and patient invitations | Not implemented | Needs a dedicated project and end-to-end authorization tests |
-| AI, OCR, notifications, calendar, emergency escalation | Not implemented | Provider credentials and reviewed clinical/privacy rules are missing |
-| Doctor, caregiver, clinic-admin workflows | Not implemented | Role records are modeled; role-specific screens and audited admin paths remain |
-| Local quality checks | Passing | TypeScript, ESLint, four UI tests, and optimized Next.js build |
-| Database/RLS validation | Blocked | No Docker daemon; no active dedicated MedVita project selected |
-| GitHub and Vercel delivery | Not completed | Account connections verified; repository and deployment are not created |
+| Accessible life-stage presentation demo | Implemented | Six profiles, keyboard tabs, timed walkthrough, larger text, contrast control |
+| Demo interactions | Implemented | Local notes and age-aware care logs, medicine toggles, wellness checklist, appointment samples, fictional JSON export |
+| Account and profile entry | Implemented (limited) | Email/password sign-in and sign-up; list RLS-visible profiles; create adult self-profile or submit a pending minor guardian request |
+| Supabase SSR client setup | Configured | Cookie-based clients, `proxy.ts`, and PKCE callback |
+| Core database schema | Applied | Three migrations; patient, relationships, consent, clinical, medication, documents, calendar, wellness, AI, alerts, notifications |
+| Hosted database and RLS configuration | Applied | 40 public tables have RLS; private document bucket; security advisor clear |
+| RLS access-isolation verification | SQL checks added | Fictional role/consent cases run transactionally; standard `supabase test db --linked` still requires local Docker/Podman |
+| Patient CRUD and sharing | Not implemented | Needs server-side authorization and isolation tests |
+| Role-specific care workflows | Not implemented | Doctor, caregiver, clinic, and platform admin screens remain |
+| AI/OCR/notifications/calendar integrations | Not implemented | Requires provider setup, backend paths, and reviewable error states |
+| Emergency demo | Implemented locally | User-initiated `tel:` links and fictional quick-reference card; no contact alert, location sharing, dispatch, or call confirmation |
+| Local checks | Passing on last run | TypeScript, lint, six component tests, four account action tests, production build; rerun after current edits |
+| GitHub | Complete | Private `Arya99908/medvita-healthcare-platform`; credentials and patient records excluded |
+| Vercel | Preview ready | Protected preview builds; project URL and publishable key are configured; current local changes need a new deployment |
 
-## Next implementation steps
+## Required next work
 
-1. Select or create a dedicated active Supabase project and configure its credentials outside source control.
-2. Apply and test the schema; add isolated test identities for RLS/access isolation.
-3. Add authenticated patient/profile CRUD with server-side checks and audit trails.
-4. Implement clinician/guardian/caregiver access and consent workflows before sensitive adolescent records.
-5. Add document upload, calendar, notifications, and reviewable AI summaries as separately configured integrations.
-6. Create a private repository and deployment only after the code and selected project have been reviewed.
+1. Add authenticated health-event and medication CRUD with access checks and audit trails.
+2. Implement reviewed role-specific workflows and permission management; keep sensitive adolescent access consent-based.
+3. Add private file uploads, calendar and notification services, AI summaries, and emergency handoff as independently configurable integrations.
+4. Complete security, privacy, legal, and clinical review before any real-world use.

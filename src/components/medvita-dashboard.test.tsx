@@ -62,4 +62,31 @@ describe("MedVita fictional demo", () => {
     expect(document.documentElement.style.getPropertyValue("--font-scale")).toBe("1.08");
     expect(container.querySelector(".stage-tab.active")?.textContent).toContain("Teen girl");
   });
+
+  it("saves age-appropriate care logs as synthetic local demo data", async () => {
+    const user = userEvent.setup();
+    render(<MedVitaDashboard />);
+
+    await user.click(screen.getByRole("tab", { name: "Infant" }));
+    await user.click(screen.getByRole("button", { name: "Wellness" }));
+    await user.type(screen.getByLabelText("Sample observation"), "Fictional feeding entry");
+    await user.click(screen.getByRole("button", { name: "Save demo log" }));
+
+    const entries = JSON.parse(window.localStorage.getItem("medvita-demo-care-logs") ?? "[]");
+    expect(entries).toHaveLength(1);
+    expect(entries[0].profileId).toBe("infant");
+    expect(screen.getByText("Fictional feeding entry")).toBeTruthy();
+    expect(screen.getByText(/Do not enter real health details/i)).toBeTruthy();
+  });
+
+  it("shows user-initiated emergency dialer choices without claiming dispatch", async () => {
+    const user = userEvent.setup();
+    render(<MedVitaDashboard />);
+
+    await user.click(screen.getByRole("button", { name: "Open emergency options" }));
+    expect(screen.getByRole("heading", { name: "Need urgent help?" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open device dialer for 112" }).getAttribute("href")).toBe("tel:112");
+    expect(screen.getByRole("link", { name: "Open device dialer for 108" }).getAttribute("href")).toBe("tel:108");
+    expect(screen.getByText(/does not place the call or dispatch an ambulance/i)).toBeTruthy();
+  });
 });

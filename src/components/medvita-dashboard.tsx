@@ -3,13 +3,15 @@
 import {
   Activity, ArrowRight, Baby, Bell, CalendarDays,
   Check, ChevronDown, ClipboardList, Contrast, FileText, Heart, Home,
-  Menu, MessageCircle, Plus, Search, Shield, Sparkles, Users, X, Pill,
+  Menu, MessageCircle, Plus, Search, Shield, Sparkles, Users, X, Pill, PhoneCall,
   Leaf, Download, RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { AppSection, DemoEvent, DemoProfile, demoProfiles, navigationItems } from "@/lib/demo-data";
+import DailyCareLog from "@/components/daily-care-log";
+import EmergencySection from "@/components/emergency-section";
 
 type SavedNote = { id: string; profileId: DemoProfile["id"]; message: string; createdAt: string };
 type Toast = { id: number; message: string } | null;
@@ -43,6 +45,7 @@ const sectionTitles: Record<AppSection, { title: string; subtitle: string }> = {
   appointments: { title: "Appointments", subtitle: "Plan ahead and keep your care team in the loop." },
   wellness: { title: "Everyday wellness", subtitle: "Small routines can make care feel easier to manage." },
   documents: { title: "Health documents", subtitle: "Keep sample records and care documents together." },
+  emergency: { title: "Emergency help", subtitle: "Open your device dialer and review fictional emergency details." },
 };
 
 function IconFor({ name, size = 18 }: { name: string; size?: number }) {
@@ -54,6 +57,7 @@ function IconFor({ name, size = 18 }: { name: string; size?: number }) {
     case "calendar": return <CalendarDays {...props} />;
     case "wellness": return <Leaf {...props} />;
     case "documents": return <FileText {...props} />;
+    case "emergency": return <PhoneCall {...props} />;
     default: return <Heart {...props} />;
   }
 }
@@ -122,7 +126,9 @@ export default function MedVitaDashboard() {
   }
   function resetDemo() {
     window.localStorage.removeItem("medvita-demo-notes");
+    window.localStorage.removeItem("medvita-demo-care-logs");
     window.dispatchEvent(new Event("medvita-demo-notes-updated"));
+    window.dispatchEvent(new Event("medvita-demo-reset"));
     notesCache = { raw: null, value: EMPTY_NOTES };
     setMedicationTaken({}); setWellnessDone({}); setUploadedNames([]); setAppointments({});
     setProfileIndex(1); setActiveSection("overview"); setAutoPlay(false); showToast("Demo returned to its sample starting state.");
@@ -153,7 +159,8 @@ export default function MedVitaDashboard() {
             <button className="icon-button contrast-control" type="button" aria-pressed={highContrast} onClick={() => setHighContrast((v) => !v)} aria-label="Toggle high contrast"><Contrast size={17} /><span>Contrast</span></button>
           </div>
           <span className="topbar-divider" />
-          <Link className="user-chip" href="/login" aria-label="Open sign-in"><div className="user-avatar">R</div><span>Sign in</span><ChevronDown size={14} aria-hidden="true" /></Link>
+          <button className="emergency-shortcut" type="button" onClick={() => setSection("emergency")} aria-label="Open emergency options"><PhoneCall size={16} /><span>Emergency</span></button>
+          <Link className="user-chip" href="/account" aria-label="Open your account"><div className="user-avatar"><Users size={16} aria-hidden="true" /></div><span>My account</span><ChevronDown size={14} aria-hidden="true" /></Link>
           <button className="icon-button mobile-menu-button" type="button" onClick={() => setMobileMenu((v) => !v)} aria-expanded={mobileMenu} aria-label={mobileMenu ? "Close menu" : "Open menu"}>{mobileMenu ? <X size={19} /> : <Menu size={19} />}</button>
         </div>
       </header>
@@ -163,7 +170,7 @@ export default function MedVitaDashboard() {
           <div className="space-label">YOUR SPACE</div>
           <div className="patient-switcher"><span className="switcher-avatar">{profile.initials}</span><span className="switcher-copy"><strong>{profile.name}</strong><small>{profile.label} · {profile.age}</small></span><ChevronDown size={15} aria-hidden="true" /></div>
           <nav className="sidebar-nav" aria-label="Health sections">
-            {navigationItems.map((item) => <button key={item.id} type="button" className={`nav-item${activeSection === item.id ? " selected" : ""}`} onClick={() => setSection(item.id)} aria-current={activeSection === item.id ? "page" : undefined}><IconFor name={item.icon} /><span>{item.label}</span>{item.id === "appointments" && <span className="nav-count">2</span>}</button>)}
+            {navigationItems.map((item) => <button key={item.id} type="button" className={`nav-item${activeSection === item.id ? " selected" : ""}${item.id === "emergency" ? " emergency-nav" : ""}`} onClick={() => setSection(item.id)} aria-current={activeSection === item.id ? "page" : undefined}><IconFor name={item.icon} /><span>{item.label}</span>{item.id === "appointments" && <span className="nav-count">2</span>}</button>)}
           </nav>
           <div className="sidebar-bottom"><div className="privacy-card"><div className="privacy-icon"><Shield size={17} /></div><div><strong>Your privacy matters</strong><p>Demo data stays on this device.</p></div></div><button className="reset-button" type="button" onClick={resetDemo}><RotateCcw size={15} /> Reset demo data</button></div>
         </aside>
@@ -186,6 +193,7 @@ export default function MedVitaDashboard() {
             {activeSection === "appointments" && <AppointmentSection profile={profile} appointments={appointments[profile.id] ?? []} onAdd={addSampleAppointment} />}
             {activeSection === "wellness" && <WellnessSection profile={profile} done={wellnessDone} setDone={setWellnessDone} />}
             {activeSection === "documents" && <DocumentSection uploadedNames={uploadedNames} setUploadedNames={setUploadedNames} />}
+            {activeSection === "emergency" && <EmergencySection profile={profile} />}
 
             <div className="footer-note"><Shield size={15} /><span>This prototype uses fictional sample data. It is not a medical record and does not provide medical advice.</span><button type="button" onClick={downloadReport}>Export sample report <Download size={14} /></button></div>
           </div>
@@ -233,7 +241,7 @@ function AppointmentSection({ profile, appointments, onAdd }: { profile: DemoPro
 }
 
 function WellnessSection({ profile, done, setDone }: { profile: DemoProfile; done: Record<string, boolean>; setDone: (update: (state: Record<string, boolean>) => Record<string, boolean>) => void }) {
-  return <section className="section-card"><div className="card-heading"><div><span className="micro-label">SMALL STEPS, AT YOUR PACE</span><h2>Wellness for {profile.label.toLowerCase()}s</h2><p>Fictional, general wellbeing reminders. Not personalized medical guidance.</p></div><span className="wellness-icon large"><Heart size={19} /></span></div><div className="habit-list">{profile.wellness.map((habit) => <label className="habit-row" key={habit}><input type="checkbox" checked={Boolean(done[`${profile.id}-${habit}`])} onChange={(event) => setDone((state) => ({ ...state, [`${profile.id}-${habit}`]: event.target.checked }))} /><span className="custom-check"><Check size={14} /></span><span>{habit}</span><small>Sample idea</small></label>)}</div><div className="info-callout"><Heart size={17} /><p>Choose routines that feel comfortable. Ask a clinician about activity or diet changes when medical conditions or restrictions apply.</p></div></section>;
+  return <><section className="section-card"><div className="card-heading"><div><span className="micro-label">SMALL STEPS, AT YOUR PACE</span><h2>Wellness for {profile.label.toLowerCase()}s</h2><p>Fictional, general wellbeing reminders. Not personalized medical guidance.</p></div><span className="wellness-icon large"><Heart size={19} /></span></div><div className="habit-list">{profile.wellness.map((habit) => <label className="habit-row" key={habit}><input type="checkbox" checked={Boolean(done[`${profile.id}-${habit}`])} onChange={(event) => setDone((state) => ({ ...state, [`${profile.id}-${habit}`]: event.target.checked }))} /><span className="custom-check"><Check size={14} /></span><span>{habit}</span><small>Sample idea</small></label>)}</div><div className="info-callout"><Heart size={17} /><p>Choose routines that feel comfortable. Ask a clinician about activity or diet changes when medical conditions or restrictions apply.</p></div></section><DailyCareLog profile={profile} /></>;
 }
 
 function DocumentSection({ uploadedNames, setUploadedNames }: { uploadedNames: string[]; setUploadedNames: (update: (names: string[]) => string[]) => void }) {
