@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Activity, ArrowLeft, CalendarDays, ClipboardList, Clock3, FileText, Pill, ShieldCheck } from "lucide-react";
+import { Activity, ArrowLeft, CalendarDays, ClipboardList, Clock3, FileText, Heart, Pill, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import HealthEventForm from "../timeline-form";
 import AppointmentForm from "../appointment-form";
@@ -11,6 +11,7 @@ import DocumentForm from "../document-form";
 import SymptomForm from "../symptom-form";
 import ChildCareForms from "../child-care-forms";
 import VitalForm from "../vital-form";
+import MenstrualJournalForm from "../menstrual-journal-form";
 import LocalDateTime from "@/components/local-date-time";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
@@ -25,7 +26,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
 
   const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
     supabase.from("patient_profiles").select("id,display_name,life_stage").eq("id", patientId).maybeSingle(),
-    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
   ]);
   if (profileError || relationshipError || !profile) notFound();
 
@@ -39,6 +40,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     : { data: [], error: null };
   const isChildStage = ["infant", "child"].includes(profile.life_stage);
   const isAdultStage = ["adult", "senior"].includes(profile.life_stage);
+  const isAdolescentStage = profile.life_stage === "adolescent";
   const [{ data: feedings, error: feedingsError }, { data: bowelRecords, error: bowelRecordsError }, { data: vomitingRecords, error: vomitingRecordsError }, { data: growthRecords, error: growthRecordsError }] = canRead && isChildStage ? await Promise.all([
     supabase.from("feeding_records").select("id,feeding_type,quantity_ml,duration_minutes,notes,recorded_at").eq("patient_id", patientId).order("recorded_at", { ascending: false }).limit(50),
     supabase.from("bowel_movement_records").select("id,consistency,color,notes,recorded_at").eq("patient_id", patientId).order("recorded_at", { ascending: false }).limit(50),
@@ -47,6 +49,9 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
   const { data: vitals, error: vitalsError } = canRead && isAdultStage
     ? await supabase.from("vitals").select("id,vital_type,value,unit,source,verification_status,measured_at").eq("patient_id", patientId).order("measured_at", { ascending: false }).limit(100)
+    : { data: [], error: null };
+  const { data: menstrualRecords, error: menstrualRecordsError } = canRead && isAdolescentStage
+    ? await supabase.from("menstrual_records").select("id,period_start,period_end,flow_note,symptom_note,created_at").eq("patient_id", patientId).order("period_start", { ascending: false }).limit(50)
     : { data: [], error: null };
   const { data: appointments, error: appointmentsError } = canRead
     ? await supabase.from("appointments").select("id,title,starts_at,ends_at,location,status").eq("patient_id", patientId).order("starts_at", { ascending: true })
@@ -71,6 +76,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       {canWrite && <SymptomForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && isChildStage && <ChildCareForms patientId={patientId} />}
       {canWrite && isAdultStage && <VitalForm patientId={patientId} />}
+      {canWrite && isAdolescentStage && relationship.relationship_role === "patient" && <MenstrualJournalForm patientId={patientId} />}
       {canWrite && <AppointmentForm patientId={patientId} />}
       {canWrite && <MedicationForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && <DocumentForm patientId={patientId} lifeStage={profile.life_stage} />}
@@ -84,6 +90,11 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
         {symptomsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Observations could not be loaded</strong><span>Reload the page or sign in again.</span></div>
           : symptoms?.length ? <div className="timeline-event-list">{symptoms.map((observation) => <article key={observation.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">Severity {observation.severity} of 5 · unverified</span><LocalDateTime value={observation.observed_at} /></div><h3>{observation.symptom}</h3>{observation.notes && <p>{observation.notes}</p>}</article>)}</div>
             : <div className="account-empty-state"><Activity size={22} /><strong>No observations saved</strong><span>Self-reported entries appear here when available to this profile.</span></div>}
+      </section>}
+      {canRead && isAdolescentStage && <section className="account-card" aria-labelledby="private-cycle-title"><div className="account-card-heading"><div><span className="micro-label">SENSITIVE ADOLESCENT RECORD</span><h2 id="private-cycle-title">Private cycle notes</h2><p>Reads are filtered by explicit sensitive-record consent; only the adolescent account can add entries.</p></div><span className="account-card-icon"><Heart size={18} /></span></div>
+        {menstrualRecordsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Private notes could not be loaded</strong><span>Reload the page or sign in again.</span></div>
+          : menstrualRecords?.length ? <div className="timeline-event-list">{menstrualRecords.map((record) => <article key={record.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">Private · unverified</span><time>{record.period_start}{record.period_end ? ` to ${record.period_end}` : " · end date not recorded"}</time></div>{record.flow_note && <p>Flow note: {record.flow_note}</p>}{record.symptom_note && <p>Personal note: {record.symptom_note}</p>}</article>)}</div>
+            : <div className="account-empty-state"><Heart size={22} /><strong>No shared cycle notes</strong><span>This can mean no notes were saved or sensitive access has not been granted to this account.</span></div>}
       </section>}
       {canRead && isAdultStage && <section className="account-card" aria-labelledby="vitals-title"><div className="account-card-heading"><div><span className="micro-label">VITALS LOG</span><h2 id="vitals-title">Measurements</h2><p>Patient or caregiver reported; readings are not interpreted or verified here.</p></div><span className="account-card-icon"><Activity size={18} /></span></div>
         {vitalsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Readings could not be loaded</strong><span>Reload the page or sign in again.</span></div>

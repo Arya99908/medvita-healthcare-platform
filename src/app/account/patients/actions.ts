@@ -29,6 +29,17 @@ function isValidLocalDateTime(value: string) {
     && date.getUTCDate() === day && hour < 24 && minute < 60;
 }
 
+function isValidDateOnly(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return year >= 1900 && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 function localDateTimeToUtc(value: string, offsetMinutes: number) {
   const match = localDateTimePattern.exec(value);
   if (!match) return Number.NaN;
@@ -139,6 +150,16 @@ const vitalSchema = z.object({
 }).superRefine((input, context) => {
   const range = vitalRanges[input.vitalType];
   if (input.value < range.min || input.value > range.max) context.addIssue({ code: "custom", path: ["value"], message: `Enter a value from ${range.min} to ${range.max} ${range.unit}.` });
+});
+
+const menstrualSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  periodStart: z.string().trim().refine(isValidDateOnly, "Enter a valid start date."),
+  periodEnd: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid end date."),
+  flowNote: z.string().trim().max(300, "Keep flow notes under 300 characters.").optional().default(""),
+  symptomNote: z.string().trim().max(500, "Keep symptom notes under 500 characters.").optional().default(""),
+}).superRefine((value, context) => {
+  if (value.periodEnd && value.periodEnd < value.periodStart) context.addIssue({ code: "custom", path: ["periodEnd"], message: "End date must be on or after the start date." });
 });
 
 const documentSchema = z.object({
@@ -330,6 +351,33 @@ export async function createVitalRecord(patientId: string, _previous: CareLogFor
   if (error) return { status: "error", message: "The reading could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Reading saved as an unverified report." };
+}
+
+export async function createMenstrualRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = menstrualSchema.safeParse({ patientId, periodStart: formData.get("periodStart"), periodEnd: formData.get("periodEnd") ?? "", flowNote: formData.get("flowNote") ?? "", symptomNote: formData.get("symptomNote") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the cycle notes and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving a private journal entry." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || profile.life_stage !== "adolescent" || relationship?.relationship_role !== "patient" || relationship.status !== "active" || !relationship.can_read || !relationship.can_write) {
+    return { status: "error", message: "Only the adolescent account with active write access can add private cycle notes." };
+  }
+  const { error } = await supabase.from("menstrual_records").insert({
+    patient_id: patientId,
+    period_start: parsed.data.periodStart,
+    period_end: parsed.data.periodEnd || null,
+    flow_note: parsed.data.flowNote || null,
+    symptom_note: parsed.data.symptomNote || null,
+    visibility: "sensitive_adolescent",
+    created_by: user.id,
+  });
+  if (error) return { status: "error", message: "The private journal entry could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Private cycle note saved. It remains subject to the profile's consent settings." };
 }
 
 export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createSymptomObservation, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createMenstrualRecord, createSymptomObservation, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -71,6 +71,12 @@ function growthForm(values: Record<string, string> = {}) {
 function vitalForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ vitalType: "blood_pressure_systolic", value: "122", ...values })) form.set(key, value);
+  return form;
+}
+
+function menstrualForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ periodStart: "2026-11-03", periodEnd: "2026-11-07", flowNote: "Fictional sample note", symptomNote: "Fictional sample note", ...values })) form.set(key, value);
   return form;
 }
 
@@ -297,6 +303,46 @@ describe("adult and senior vital server action", () => {
     const result = await createVitalRecord(patientId, { status: "idle", message: "" }, vitalForm());
     expect(result.status).toBe("success");
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, vital_type: "blood_pressure_systolic", value: 122, unit: "mmHg", source: "patient", verification_status: "unverified", created_by: "user-1" }));
+  });
+});
+
+describe("private adolescent cycle journal action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adolescent" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { relationship_role: "patient", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert: vi.fn().mockResolvedValue({ error: null }) });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("stores an adolescent's own cycle note with sensitive visibility", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adolescent" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "patient", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createMenstrualRecord(patientId, { status: "idle", message: "" }, menstrualForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, period_start: "2026-11-03", period_end: "2026-11-07", visibility: "sensitive_adolescent", created_by: "user-1" }));
+  });
+
+  it("does not allow a caregiver account to write a private cycle note", async () => {
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adolescent" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert: vi.fn() });
+    const result = await createMenstrualRecord(patientId, { status: "idle", message: "" }, menstrualForm());
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/only the adolescent account/i);
+    expect(mockSupabase.from).not.toHaveBeenCalledWith("menstrual_records");
+  });
+
+  it("rejects a cycle end date before the start date", async () => {
+    const result = await createMenstrualRecord(patientId, { status: "idle", message: "" }, menstrualForm({ periodStart: "2026-11-09", periodEnd: "2026-11-02" }));
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/on or after the start date/i);
+    expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
   });
 });
 
