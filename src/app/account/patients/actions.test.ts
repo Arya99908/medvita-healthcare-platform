@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createHealthEvent, createMedication, createSymptomObservation, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createFeedingRecord, createHealthEvent, createMedication, createSymptomObservation, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -41,6 +41,18 @@ function eventForm(values: Record<string, string> = {}) {
 function symptomForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ symptom: "Fictional sample observation", severity: "2", notes: "Fictional note", visibility: "general", ...values })) form.set(key, value);
+  return form;
+}
+
+function feedingForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ feedingType: "formula", quantityMl: "120", durationMinutes: "15", notes: "Fictional observation", ...values })) form.set(key, value);
+  return form;
+}
+
+function bowelForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ consistency: "Fictional sample", color: "Fictional sample", notes: "Fictional observation", ...values })) form.set(key, value);
   return form;
 }
 
@@ -174,6 +186,49 @@ describe("symptom observation server action", () => {
     const result = await createSymptomObservation(patientId, { status: "idle", message: "" }, symptomForm());
     expect(result).toEqual({ status: "success", message: "Self-reported observation saved as unverified." });
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, symptom: "Fictional sample observation", severity: 2, created_by: "user-1" }));
+  });
+});
+
+describe("child care log server actions", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "infant" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+        : { insert: vi.fn().mockResolvedValue({ error: null }) });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("saves a feeding entry only for an infant or child profile", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "infant" }, error: null })
+      : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createFeedingRecord(patientId, { status: "idle", message: "" }, feedingForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, feeding_type: "formula", quantity_ml: 120, duration_minutes: 15, created_by: "user-1" }));
+  });
+
+  it("saves a bowel movement entry under the same access and life-stage checks", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createBowelMovementRecord(patientId, { status: "idle", message: "" }, bowelForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, consistency: "Fictional sample", color: "Fictional sample", created_by: "user-1" }));
+  });
+
+  it("does not allow child care logs on an adult profile", async () => {
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { insert: vi.fn() });
+    const result = await createFeedingRecord(patientId, { status: "idle", message: "" }, feedingForm());
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/infant or child/i);
+    expect(mockSupabase.from).not.toHaveBeenCalledWith("feeding_records");
   });
 });
 

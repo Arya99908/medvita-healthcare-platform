@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Activity, ArrowLeft, CalendarDays, Clock3, FileText, Pill, ShieldCheck } from "lucide-react";
+import { Activity, ArrowLeft, CalendarDays, ClipboardList, Clock3, FileText, Pill, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import HealthEventForm from "../timeline-form";
 import AppointmentForm from "../appointment-form";
@@ -9,6 +9,7 @@ import MedicationForm from "../medication-form";
 import MedicationStatusForm from "../medication-status-form";
 import DocumentForm from "../document-form";
 import SymptomForm from "../symptom-form";
+import ChildCareForms from "../child-care-forms";
 import LocalDateTime from "@/components/local-date-time";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
@@ -35,6 +36,11 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   const { data: symptoms, error: symptomsError } = canRead
     ? await supabase.from("symptom_observations").select("id,symptom,severity,notes,observed_at,visibility").eq("patient_id", patientId).order("observed_at", { ascending: false })
     : { data: [], error: null };
+  const isChildStage = ["infant", "child"].includes(profile.life_stage);
+  const [{ data: feedings, error: feedingsError }, { data: bowelRecords, error: bowelRecordsError }] = canRead && isChildStage ? await Promise.all([
+    supabase.from("feeding_records").select("id,feeding_type,quantity_ml,duration_minutes,notes,recorded_at").eq("patient_id", patientId).order("recorded_at", { ascending: false }).limit(50),
+    supabase.from("bowel_movement_records").select("id,consistency,color,notes,recorded_at").eq("patient_id", patientId).order("recorded_at", { ascending: false }).limit(50),
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
   const { data: appointments, error: appointmentsError } = canRead
     ? await supabase.from("appointments").select("id,title,starts_at,ends_at,location,status").eq("patient_id", patientId).order("starts_at", { ascending: true })
     : { data: [], error: null };
@@ -56,6 +62,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       <div className="account-safety-note"><ShieldCheck size={17} /><span>Use fictional data only. Entries are unverified personal notes, not diagnoses, prescriptions, or medical advice.</span></div>
       {canWrite && <HealthEventForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && <SymptomForm patientId={patientId} lifeStage={profile.life_stage} />}
+      {canWrite && isChildStage && <ChildCareForms patientId={patientId} />}
       {canWrite && <AppointmentForm patientId={patientId} />}
       {canWrite && <MedicationForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && <DocumentForm patientId={patientId} lifeStage={profile.life_stage} />}
@@ -69,6 +76,12 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
         {symptomsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Observations could not be loaded</strong><span>Reload the page or sign in again.</span></div>
           : symptoms?.length ? <div className="timeline-event-list">{symptoms.map((observation) => <article key={observation.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">Severity {observation.severity} of 5 · unverified</span><LocalDateTime value={observation.observed_at} /></div><h3>{observation.symptom}</h3>{observation.notes && <p>{observation.notes}</p>}</article>)}</div>
             : <div className="account-empty-state"><Activity size={22} /><strong>No observations saved</strong><span>Self-reported entries appear here when available to this profile.</span></div>}
+      </section>}
+      {canRead && isChildStage && <section className="account-card" aria-labelledby="child-care-title"><div className="account-card-heading"><div><span className="micro-label">CHILD CARE LOGS</span><h2 id="child-care-title">Feeding and bowel notes</h2><p>Caregiver or patient entries are unverified and do not provide clinical guidance.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></div>
+        {feedingsError || bowelRecordsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Care logs could not be loaded</strong><span>Reload the page or sign in again.</span></div> : <>
+          <h3 className="care-log-subheading">Feeding</h3>{feedings?.length ? <div className="timeline-event-list">{feedings.map((record) => <article key={record.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{record.feeding_type.replaceAll("_", " ")} · unverified</span><LocalDateTime value={record.recorded_at} /></div>{record.quantity_ml != null && <p>Recorded quantity: {record.quantity_ml} ml</p>}{record.duration_minutes != null && <p>Duration: {record.duration_minutes} minutes</p>}{record.notes && <p>{record.notes}</p>}</article>)}</div> : <p className="care-log-empty">No feeding entries saved.</p>}
+          <h3 className="care-log-subheading">Bowel movements</h3>{bowelRecords?.length ? <div className="timeline-event-list">{bowelRecords.map((record) => <article key={record.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">Unverified observation</span><LocalDateTime value={record.recorded_at} /></div>{record.consistency && <p>Consistency: {record.consistency}</p>}{record.color && <p>Colour: {record.color}</p>}{record.notes && <p>{record.notes}</p>}</article>)}</div> : <p className="care-log-empty">No bowel movement entries saved.</p>}
+        </>}
       </section>}
       {canRead && <section className="account-card" aria-labelledby="medication-list-title"><div className="account-card-heading"><div><span className="micro-label">MEDICINE NOTES</span><h2 id="medication-list-title">Medicines</h2><p>Self-reported entries are not prescriptions or dose guidance.</p></div><span className="account-card-icon"><Pill size={18} /></span></div>
         {medicationsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Medicine notes could not be loaded</strong><span>Reload the page or sign in again.</span></div>

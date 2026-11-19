@@ -11,6 +11,7 @@ export type AppointmentStatusFormState = HealthEventFormState;
 export type MedicationFormState = HealthEventFormState;
 export type MedicationStatusFormState = HealthEventFormState;
 export type DocumentFormState = HealthEventFormState;
+export type CareLogFormState = HealthEventFormState;
 
 const localDateTimePattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 
@@ -88,6 +89,21 @@ const symptomSchema = z.object({
   severity: z.coerce.number().int().min(1).max(5),
   notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
   visibility: z.enum(["general", "sensitive_adolescent"]),
+});
+
+const feedingSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  feedingType: z.enum(["breastfeeding", "formula", "solid_food", "other"]),
+  quantityMl: z.string().trim().optional().default("").refine((value) => !value || (/^\d{1,4}(\.\d{1,1})?$/.test(value) && Number(value) <= 2000), "Enter a quantity from 0 to 2,000 ml."),
+  durationMinutes: z.coerce.number().int().min(0).max(600).optional().default(0),
+  notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
+});
+
+const bowelSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  consistency: z.string().trim().max(60, "Keep the consistency under 60 characters.").optional().default(""),
+  color: z.string().trim().max(60, "Keep the colour under 60 characters.").optional().default(""),
+  notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
 });
 
 const documentSchema = z.object({
@@ -191,6 +207,40 @@ export async function createSymptomObservation(patientId: string, _previous: Hea
   if (error) return { status: "error", message: "The observation could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Self-reported observation saved as unverified." };
+}
+
+export async function createFeedingRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = feedingSchema.safeParse({ patientId, feedingType: formData.get("feedingType"), quantityMl: formData.get("quantityMl") ?? "", durationMinutes: formData.get("durationMinutes") ?? "0", notes: formData.get("notes") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the feeding details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving a care log." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["infant", "child"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an infant or child profile is required." };
+  const { error } = await supabase.from("feeding_records").insert({ patient_id: patientId, feeding_type: parsed.data.feedingType, quantity_ml: parsed.data.quantityMl ? Number(parsed.data.quantityMl) : null, duration_minutes: parsed.data.durationMinutes || null, notes: parsed.data.notes || null, created_by: user.id });
+  if (error) return { status: "error", message: "The feeding log could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Feeding log saved as a caregiver or patient report." };
+}
+
+export async function createBowelMovementRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = bowelSchema.safeParse({ patientId, consistency: formData.get("consistency") ?? "", color: formData.get("color") ?? "", notes: formData.get("notes") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the care log and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving a care log." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["infant", "child"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an infant or child profile is required." };
+  const { error } = await supabase.from("bowel_movement_records").insert({ patient_id: patientId, consistency: parsed.data.consistency || null, color: parsed.data.color || null, notes: parsed.data.notes || null, created_by: user.id });
+  if (error) return { status: "error", message: "The care log could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Care log saved as a caregiver or patient report." };
 }
 
 export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {
