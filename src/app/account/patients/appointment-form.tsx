@@ -22,8 +22,8 @@ export default function AppointmentForm({ patientId }: { patientId: string }) {
     if (state.status === "success") formRef.current?.reset();
   }, [state]);
 
-  return <section className="account-card" aria-labelledby="appointment-form-title">
-    <div className="account-card-heading"><div><span className="micro-label">CARE CALENDAR</span><h2 id="appointment-form-title">Add an appointment</h2><p>This records a plan; it does not book with a clinic or send a reminder.</p></div><span className="account-card-icon"><CalendarDays size={18} /></span></div>
+  return <details className="account-card account-entry-disclosure" aria-labelledby="appointment-form-title">
+    <summary className="account-card-heading"><div><span className="micro-label">CARE CALENDAR</span><h2 id="appointment-form-title">Add an appointment</h2><p>This records a plan; it does not book with a clinic or send a reminder.</p></div><span className="account-card-icon"><CalendarDays size={18} /></span></summary>
     <form ref={formRef} action={action} className="account-profile-form timeline-form">
       <label htmlFor="appointment-title">Appointment</label>
       <input id="appointment-title" name="title" minLength={2} maxLength={120} required placeholder="Clinic visit or care appointment" />
@@ -38,5 +38,5 @@ export default function AppointmentForm({ patientId }: { patientId: string }) {
       {state.message && <p className={`account-form-message ${state.status}`} role="status">{state.status === "success" && <Check size={15} />}{state.message}</p>}
       <button className="primary-button account-submit" type="submit" disabled={pending}><Plus size={16} />{pending ? "Saving…" : "Save appointment"}</button>
     </form>
-  </section>;
+  </details>;
 }

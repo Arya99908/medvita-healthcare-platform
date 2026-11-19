@@ -15,8 +15,8 @@ export default function MedicationForm({ patientId, lifeStage }: { patientId: st
     if (state.status === "success") formRef.current?.reset();
   }, [state]);
 
-  return <section className="account-card" aria-labelledby="medication-form-title">
-    <div className="account-card-heading"><div><span className="micro-label">MEDICINE NOTES</span><h2 id="medication-form-title">Add a medicine</h2><p>Enter the details from a package or care record. This does not prescribe or check a dose.</p></div><span className="account-card-icon"><Pill size={18} /></span></div>
+  return <details className="account-card account-entry-disclosure" aria-labelledby="medication-form-title">
+    <summary className="account-card-heading"><div><span className="micro-label">MEDICINE NOTES</span><h2 id="medication-form-title">Add a medicine</h2><p>Enter the details from a package or care record. This does not prescribe or check a dose.</p></div><span className="account-card-icon"><Pill size={18} /></span></summary>
     <form ref={formRef} action={action} className="account-profile-form timeline-form">
       <label htmlFor="medicine-name">Medicine name</label>
       <input id="medicine-name" name="medicineName" minLength={2} maxLength={120} required placeholder="Name as written on the package" />
@@ -44,5 +44,5 @@ export default function MedicationForm({ patientId, lifeStage }: { patientId: st
       {state.message && <p className={`account-form-message ${state.status}`} role="status">{state.status === "success" && <Check size={15} />}{state.message}</p>}
       <button className="primary-button account-submit" type="submit" disabled={pending}><Plus size={16} />{pending ? "Saving…" : "Save medicine note"}</button>
     </form>
-  </section>;
+  </details>;
 }

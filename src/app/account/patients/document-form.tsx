@@ -15,8 +15,8 @@ export default function DocumentForm({ patientId, lifeStage }: { patientId: stri
     if (state.status === "success") formRef.current?.reset();
   }, [state]);
 
-  return <section className="account-card" aria-labelledby="document-form-title">
-    <div className="account-card-heading"><div><span className="micro-label">PRIVATE FILES</span><h2 id="document-form-title">Add a document</h2><p>PDF, JPG, or PNG, up to 4 MB. Files stay private to this profile&apos;s access rules.</p></div><span className="account-card-icon"><FilePlus2 size={18} /></span></div>
+  return <details className="account-card account-entry-disclosure" aria-labelledby="document-form-title">
+    <summary className="account-card-heading"><div><span className="micro-label">PRIVATE FILES</span><h2 id="document-form-title">Add a document</h2><p>PDF, JPG, or PNG, up to 4 MB. Files stay private to this profile&apos;s access rules.</p></div><span className="account-card-icon"><FilePlus2 size={18} /></span></summary>
     <form ref={formRef} action={action} className="account-profile-form timeline-form">
       <label htmlFor="document-label">Document label</label>
       <input id="document-label" name="displayName" minLength={2} maxLength={80} required placeholder="A short label; do not enter real health data" />
@@ -34,5 +34,5 @@ export default function DocumentForm({ patientId, lifeStage }: { patientId: stri
       {state.message && <p className={`account-form-message ${state.status}`} role="status">{state.status === "success" && <Check size={15} />}{state.message}</p>}
       <button className="primary-button account-submit" type="submit" disabled={pending}><Plus size={16} />{pending ? "Uploading…" : "Upload document"}</button>
     </form>
-  </section>;
+  </details>;
 }

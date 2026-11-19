@@ -22,8 +22,8 @@ export default function HealthEventForm({ patientId, lifeStage }: { patientId: s
     if (state.status === "success") formRef.current?.reset();
   }, [state]);
 
-  return <section className="account-card" aria-labelledby="add-event-title">
-    <div className="account-card-heading"><div><span className="micro-label">PERSONAL TIMELINE</span><h2 id="add-event-title">Add a note</h2><p>New entries are marked unverified and follow this profile&apos;s access rules.</p></div><span className="account-card-icon"><Plus size={18} /></span></div>
+  return <details className="account-card account-entry-disclosure" aria-labelledby="add-event-title">
+    <summary className="account-card-heading"><div><span className="micro-label">PERSONAL TIMELINE</span><h2 id="add-event-title">Add a note</h2><p>New entries are marked unverified and follow this profile&apos;s access rules.</p></div><span className="account-card-icon"><Plus size={18} /></span></summary>
     <form ref={formRef} action={action} className="account-profile-form timeline-form">
       <label htmlFor="event-title">Title</label>
       <input id="event-title" name="title" minLength={2} maxLength={120} required placeholder="A short note title" />
@@ -57,5 +57,5 @@ export default function HealthEventForm({ patientId, lifeStage }: { patientId: s
       {state.message && <p className={`account-form-message ${state.status}`} role="status">{state.status === "success" && <Check size={15} />}{state.message}</p>}
       <button className="primary-button account-submit" type="submit" disabled={pending}><Plus size={16} />{pending ? "Saving…" : "Save note"}</button>
     </form>
-  </section>;
+  </details>;
 }
