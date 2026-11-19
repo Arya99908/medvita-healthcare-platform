@@ -10,6 +10,7 @@ import MedicationStatusForm from "../medication-status-form";
 import DocumentForm from "../document-form";
 import SymptomForm from "../symptom-form";
 import ChildCareForms from "../child-care-forms";
+import VitalForm from "../vital-form";
 import LocalDateTime from "@/components/local-date-time";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
@@ -37,12 +38,16 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     ? await supabase.from("symptom_observations").select("id,symptom,severity,notes,observed_at,visibility").eq("patient_id", patientId).order("observed_at", { ascending: false })
     : { data: [], error: null };
   const isChildStage = ["infant", "child"].includes(profile.life_stage);
+  const isAdultStage = ["adult", "senior"].includes(profile.life_stage);
   const [{ data: feedings, error: feedingsError }, { data: bowelRecords, error: bowelRecordsError }, { data: vomitingRecords, error: vomitingRecordsError }, { data: growthRecords, error: growthRecordsError }] = canRead && isChildStage ? await Promise.all([
     supabase.from("feeding_records").select("id,feeding_type,quantity_ml,duration_minutes,notes,recorded_at").eq("patient_id", patientId).order("recorded_at", { ascending: false }).limit(50),
     supabase.from("bowel_movement_records").select("id,consistency,color,notes,recorded_at").eq("patient_id", patientId).order("recorded_at", { ascending: false }).limit(50),
     supabase.from("vomiting_records").select("id,count,associated_notes,recorded_at").eq("patient_id", patientId).order("recorded_at", { ascending: false }).limit(50),
     supabase.from("growth_records").select("id,weight_kg,height_cm,head_circumference_cm,measured_at").eq("patient_id", patientId).order("measured_at", { ascending: false }).limit(50),
   ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
+  const { data: vitals, error: vitalsError } = canRead && isAdultStage
+    ? await supabase.from("vitals").select("id,vital_type,value,unit,source,verification_status,measured_at").eq("patient_id", patientId).order("measured_at", { ascending: false }).limit(100)
+    : { data: [], error: null };
   const { data: appointments, error: appointmentsError } = canRead
     ? await supabase.from("appointments").select("id,title,starts_at,ends_at,location,status").eq("patient_id", patientId).order("starts_at", { ascending: true })
     : { data: [], error: null };
@@ -65,6 +70,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       {canWrite && <HealthEventForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && <SymptomForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && isChildStage && <ChildCareForms patientId={patientId} />}
+      {canWrite && isAdultStage && <VitalForm patientId={patientId} />}
       {canWrite && <AppointmentForm patientId={patientId} />}
       {canWrite && <MedicationForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && <DocumentForm patientId={patientId} lifeStage={profile.life_stage} />}
@@ -78,6 +84,11 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
         {symptomsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Observations could not be loaded</strong><span>Reload the page or sign in again.</span></div>
           : symptoms?.length ? <div className="timeline-event-list">{symptoms.map((observation) => <article key={observation.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">Severity {observation.severity} of 5 · unverified</span><LocalDateTime value={observation.observed_at} /></div><h3>{observation.symptom}</h3>{observation.notes && <p>{observation.notes}</p>}</article>)}</div>
             : <div className="account-empty-state"><Activity size={22} /><strong>No observations saved</strong><span>Self-reported entries appear here when available to this profile.</span></div>}
+      </section>}
+      {canRead && isAdultStage && <section className="account-card" aria-labelledby="vitals-title"><div className="account-card-heading"><div><span className="micro-label">VITALS LOG</span><h2 id="vitals-title">Measurements</h2><p>Patient or caregiver reported; readings are not interpreted or verified here.</p></div><span className="account-card-icon"><Activity size={18} /></span></div>
+        {vitalsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Readings could not be loaded</strong><span>Reload the page or sign in again.</span></div>
+          : vitals?.length ? <div className="timeline-event-list">{vitals.map((record) => <article key={record.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{record.vital_type.replaceAll("_", " ")} · {record.source} report · {record.verification_status}</span><LocalDateTime value={record.measured_at} /></div><h3>{record.value} {record.unit}</h3></article>)}</div>
+            : <div className="account-empty-state"><Activity size={22} /><strong>No readings saved</strong><span>Measurements saved to this profile will appear here as unverified entries.</span></div>}
       </section>}
       {canRead && isChildStage && <section className="account-card" aria-labelledby="child-care-title"><div className="account-card-heading"><div><span className="micro-label">CHILD CARE LOGS</span><h2 id="child-care-title">Feeding and bowel notes</h2><p>Caregiver or patient entries are unverified and do not provide clinical guidance.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></div>
         {feedingsError || bowelRecordsError || vomitingRecordsError || growthRecordsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Care logs could not be loaded</strong><span>Reload the page or sign in again.</span></div> : <>

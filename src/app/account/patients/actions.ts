@@ -121,6 +121,26 @@ const growthSchema = z.object({
   if (!value.weightKg && !value.heightCm && !value.headCircumferenceCm) context.addIssue({ code: "custom", path: ["weightKg"], message: "Enter at least one measurement." });
 });
 
+const vitalRanges = {
+  blood_pressure_systolic: { unit: "mmHg", min: 40, max: 300 },
+  blood_pressure_diastolic: { unit: "mmHg", min: 20, max: 200 },
+  blood_glucose: { unit: "mg/dL", min: 10, max: 1000 },
+  weight: { unit: "kg", min: 0.1, max: 400 },
+  height: { unit: "cm", min: 30, max: 250 },
+  temperature: { unit: "°C", min: 25, max: 45 },
+  heart_rate: { unit: "bpm", min: 20, max: 300 },
+  oxygen_saturation: { unit: "%", min: 50, max: 100 },
+} as const;
+
+const vitalSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  vitalType: z.enum(Object.keys(vitalRanges) as [keyof typeof vitalRanges, ...(keyof typeof vitalRanges)[]]),
+  value: z.coerce.number().finite(),
+}).superRefine((input, context) => {
+  const range = vitalRanges[input.vitalType];
+  if (input.value < range.min || input.value > range.max) context.addIssue({ code: "custom", path: ["value"], message: `Enter a value from ${range.min} to ${range.max} ${range.unit}.` });
+});
+
 const documentSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   displayName: z.string().trim().min(2, "Enter a short document label.").max(80, "Keep the label under 80 characters.").refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Remove control characters from the document label."),
@@ -290,6 +310,26 @@ export async function createGrowthRecord(patientId: string, _previous: CareLogFo
   if (error) return { status: "error", message: "The growth record could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Measurements saved as an unverified report." };
+}
+
+export async function createVitalRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = vitalSchema.safeParse({ patientId, vitalType: formData.get("vitalType"), value: formData.get("value") });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the reading and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving a reading." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["adult", "senior"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an adult or senior profile is required." };
+  const range = vitalRanges[parsed.data.vitalType];
+  const role = relationship.relationship_role;
+  const source = role === "patient" ? "patient" : role === "doctor" ? "clinician" : "caregiver";
+  const { error } = await supabase.from("vitals").insert({ patient_id: patientId, vital_type: parsed.data.vitalType, value: parsed.data.value, unit: range.unit, source, verification_status: "unverified", created_by: user.id });
+  if (error) return { status: "error", message: "The reading could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Reading saved as an unverified report." };
 }
 
 export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {

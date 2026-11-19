@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createSymptomObservation, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createSymptomObservation, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -65,6 +65,12 @@ function vomitingForm(values: Record<string, string> = {}) {
 function growthForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ weightKg: "8.25", heightCm: "72", headCircumferenceCm: "44.5", ...values })) form.set(key, value);
+  return form;
+}
+
+function vitalForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ vitalType: "blood_pressure_systolic", value: "122", ...values })) form.set(key, value);
   return form;
 }
 
@@ -268,6 +274,29 @@ describe("child care log server actions", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/at least one measurement/i);
     expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("adult and senior vital server action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { relationship_role: "patient", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert: vi.fn().mockResolvedValue({ error: null }) });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("stores a unit-bound self-reported reading as unverified", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "senior" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "patient", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createVitalRecord(patientId, { status: "idle", message: "" }, vitalForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, vital_type: "blood_pressure_systolic", value: 122, unit: "mmHg", source: "patient", verification_status: "unverified", created_by: "user-1" }));
   });
 });
 
