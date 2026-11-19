@@ -35,7 +35,7 @@ The three migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvl
 |---|---|---|
 | Accessible life-stage presentation demo | Implemented | Six profiles, keyboard tabs, timed walkthrough, larger text, contrast control |
 | Demo interactions | Implemented | Local notes and age-aware care logs, medicine toggles, wellness checklist, appointment samples, fictional JSON export |
-| Account and profile entry | Implemented (limited) | Email/password sign-in and sign-up; list RLS-visible profiles; create adult self-profile or submit a pending minor guardian request |
+| Account and profile entry | Implemented (limited) | Email/password sign-in, sign-up, and reset; list RLS-visible profiles; create adult self-profile or submit a pending minor guardian request |
 | Supabase SSR client setup | Configured | Cookie-based clients, `proxy.ts`, and PKCE callback |
 | Core database schema | Applied | Three migrations; patient, relationships, consent, clinical, medication, documents, calendar, wellness, AI, alerts, notifications |
 | Hosted database and RLS configuration | Applied | 40 public tables have RLS; private document bucket; security advisor clear |
@@ -44,9 +44,9 @@ The three migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvl
 | Role-specific care workflows | Not implemented | Doctor, caregiver, clinic, and platform admin screens remain |
 | AI/OCR/notifications/calendar integrations | Not implemented | Requires provider setup, backend paths, and reviewable error states |
 | Emergency demo | Implemented locally | User-initiated `tel:` links and fictional quick-reference card; no contact alert, location sharing, dispatch, or call confirmation |
-| Local checks | Passing on last run | TypeScript, lint, six component tests, four account action tests, production build; rerun after current edits |
+| Local checks | Passing | TypeScript, lint, six demo tests, four account action tests, four password-recovery tests, production build |
 | GitHub | Complete | Private `Arya99908/medvita-healthcare-platform`; credentials and patient records excluded |
-| Vercel | Preview ready | Protected preview builds; project URL and publishable key are configured; current local changes need a new deployment |
+| Vercel | Deployed | Protected production alias and preview; deployment protection requires Vercel team authentication |
 
 ## Required next work
 
