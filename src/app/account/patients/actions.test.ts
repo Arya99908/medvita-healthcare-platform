@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createFeedingRecord, createHealthEvent, createMedication, createSymptomObservation, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createSymptomObservation, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -59,6 +59,12 @@ function bowelForm(values: Record<string, string> = {}) {
 function vomitingForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ count: "2", associatedNotes: "Fictional observation", ...values })) form.set(key, value);
+  return form;
+}
+
+function growthForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ weightKg: "8.25", heightCm: "72", headCircumferenceCm: "44.5", ...values })) form.set(key, value);
   return form;
 }
 
@@ -245,6 +251,23 @@ describe("child care log server actions", () => {
     const result = await createVomitingRecord(patientId, { status: "idle", message: "" }, vomitingForm());
     expect(result.status).toBe("success");
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, count: 2, associated_notes: "Fictional observation", created_by: "user-1" }));
+  });
+
+  it("saves at least one growth measurement for a child profile", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createGrowthRecord(patientId, { status: "idle", message: "" }, growthForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, weight_kg: 8.25, height_cm: 72, head_circumference_cm: 44.5, created_by: "user-1" }));
+  });
+
+  it("requires at least one growth measurement", async () => {
+    const result = await createGrowthRecord(patientId, { status: "idle", message: "" }, growthForm({ weightKg: "", heightCm: "", headCircumferenceCm: "" }));
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/at least one measurement/i);
+    expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
   });
 });
 

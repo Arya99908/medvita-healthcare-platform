@@ -112,6 +112,15 @@ const vomitingSchema = z.object({
   associatedNotes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
 });
 
+const growthSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  weightKg: z.string().trim().optional().default("").refine((value) => !value || (/^\d{1,3}(\.\d{1,2})?$/.test(value) && Number(value) > 0 && Number(value) <= 200), "Enter a weight greater than 0 and up to 200 kg."),
+  heightCm: z.string().trim().optional().default("").refine((value) => !value || (/^\d{1,3}(\.\d{1,2})?$/.test(value) && Number(value) > 0 && Number(value) <= 250), "Enter a height greater than 0 and up to 250 cm."),
+  headCircumferenceCm: z.string().trim().optional().default("").refine((value) => !value || (/^\d{1,2}(\.\d{1,2})?$/.test(value) && Number(value) > 0 && Number(value) <= 100), "Enter a head measurement greater than 0 and up to 100 cm."),
+}).superRefine((value, context) => {
+  if (!value.weightKg && !value.heightCm && !value.headCircumferenceCm) context.addIssue({ code: "custom", path: ["weightKg"], message: "Enter at least one measurement." });
+});
+
 const documentSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   displayName: z.string().trim().min(2, "Enter a short document label.").max(80, "Keep the label under 80 characters.").refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Remove control characters from the document label."),
@@ -264,6 +273,23 @@ export async function createVomitingRecord(patientId: string, _previous: CareLog
   if (error) return { status: "error", message: "The care log could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Care log saved as a caregiver or patient report." };
+}
+
+export async function createGrowthRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = growthSchema.safeParse({ patientId, weightKg: formData.get("weightKg") ?? "", heightCm: formData.get("heightCm") ?? "", headCircumferenceCm: formData.get("headCircumferenceCm") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the measurements and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving measurements." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["infant", "child"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an infant or child profile is required." };
+  const { error } = await supabase.from("growth_records").insert({ patient_id: patientId, weight_kg: parsed.data.weightKg ? Number(parsed.data.weightKg) : null, height_cm: parsed.data.heightCm ? Number(parsed.data.heightCm) : null, head_circumference_cm: parsed.data.headCircumferenceCm ? Number(parsed.data.headCircumferenceCm) : null, created_by: user.id });
+  if (error) return { status: "error", message: "The growth record could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Measurements saved as an unverified report." };
 }
 
 export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {

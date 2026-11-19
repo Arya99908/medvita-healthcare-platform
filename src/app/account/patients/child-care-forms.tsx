@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { Check, ClipboardList, Plus } from "lucide-react";
-import { createBowelMovementRecord, createFeedingRecord, createVomitingRecord, type CareLogFormState } from "./actions";
+import { createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createVomitingRecord, type CareLogFormState } from "./actions";
 
 const initialState: CareLogFormState = { status: "idle", message: "" };
 
@@ -38,5 +38,23 @@ function CareLogForm({ patientId, kind }: { patientId: string; kind: "feeding" |
 }
 
 export default function ChildCareForms({ patientId }: { patientId: string }) {
-  return <><CareLogForm patientId={patientId} kind="feeding" /><CareLogForm patientId={patientId} kind="bowel" /><CareLogForm patientId={patientId} kind="vomiting" /></>;
+  const [growthState, growthAction, growthPending] = useActionState(createGrowthRecord.bind(null, patientId), initialState);
+  const growthFormRef = useRef<HTMLFormElement>(null);
+  useEffect(() => { if (growthState.status === "success") growthFormRef.current?.reset(); }, [growthState]);
+  return <>
+    <CareLogForm patientId={patientId} kind="feeding" />
+    <CareLogForm patientId={patientId} kind="bowel" />
+    <CareLogForm patientId={patientId} kind="vomiting" />
+    <details className="account-card account-entry-disclosure">
+      <summary className="account-card-heading"><div><span className="micro-label">GROWTH MEASUREMENT</span><h2>Add a measurement</h2><p>Unverified measurements only; no growth percentile or assessment.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></summary>
+      <form ref={growthFormRef} action={growthAction} className="account-profile-form timeline-form">
+        <label htmlFor="growth-weight">Weight <span>(kg, optional)</span></label><input id="growth-weight" name="weightKg" type="number" min="0.01" max="200" step="0.01" inputMode="decimal" />
+        <label htmlFor="growth-height">Height or length <span>(cm, optional)</span></label><input id="growth-height" name="heightCm" type="number" min="0.01" max="250" step="0.01" inputMode="decimal" />
+        <label htmlFor="growth-head">Head circumference <span>(cm, optional)</span></label><input id="growth-head" name="headCircumferenceCm" type="number" min="0.01" max="100" step="0.01" inputMode="decimal" />
+        <p className="timeline-privacy-note">Enter at least one value. The measurements are saved as unverified and are not compared with clinical growth standards.</p>
+        {growthState.message && <p className={`account-form-message ${growthState.status}`} role="status">{growthState.status === "success" && <Check size={15} />}{growthState.message}</p>}
+        <button className="primary-button account-submit" type="submit" disabled={growthPending}><Plus size={16} />{growthPending ? "Saving…" : "Save measurement"}</button>
+      </form>
+    </details>
+  </>;
 }
