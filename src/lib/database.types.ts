@@ -1912,6 +1912,7 @@ export type Database = {
         }
         Returns: string
       }
+      export_my_data: { Args: never; Returns: Json }
     }
     Enums: {
       [_ in never]: never

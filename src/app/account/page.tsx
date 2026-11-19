@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Baby, Check, Clock3, Heart, LogOut, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, Baby, Check, Clock3, Download, Heart, LogOut, ShieldCheck, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import PatientProfileForm from "./profile-form";
 import { signOut } from "./actions";
@@ -34,6 +34,7 @@ export default async function AccountPage() {
             })}</div> : <div className="account-empty-state"><Heart size={23} /><strong>No profiles yet</strong><span>Create your own profile or submit a guardian request for a minor.</span></div>}
         </section>
         <div className="account-safety-note"><ShieldCheck size={17} /><span>Fictional presentation profiles are separate from these account records. Use test data until the access rules and care workflows have been reviewed.</span></div>
+        <section className="account-export" aria-labelledby="export-title"><div><strong id="export-title">Your data</strong><span>Download the account data stored in MedVita. Browser-only demo notes and document files are not included.</span></div><Link href="/api/account/export"><Download size={16} /> Download a copy</Link></section>
       </div>
       <aside className="account-side-column"><PatientProfileForm /><div className="account-side-help"><span className="micro-label">NEED THE DEMO?</span><p>Switch between all six fictional life stages without an account.</p><Link href="/">Open presentation demo <ArrowLeft size={14} /></Link></div></aside>
     </div>
