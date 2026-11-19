@@ -162,6 +162,28 @@ const menstrualSchema = z.object({
   if (value.periodEnd && value.periodEnd < value.periodStart) context.addIssue({ code: "custom", path: ["periodEnd"], message: "End date must be on or after the start date." });
 });
 
+const urinationSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  urinationType: z.enum(["wet_diaper", "toilet", "other"]),
+  count: z.coerce.number().int().min(1).max(100),
+  volumeMl: z.string().trim().optional().default("").refine((value) => !value || (/^\d{1,4}(\.\d{1,1})?$/.test(value) && Number(value) > 0 && Number(value) <= 2000), "Enter a quantity greater than 0 and up to 2,000 ml."),
+  notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
+});
+
+const sleepSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  sleepType: z.enum(["nap", "overnight", "other"]),
+  startedAt: z.string().trim().refine(isValidLocalDateTime, "Enter a valid sleep start time."),
+  startedAtOffset: z.coerce.number().int().min(-840).max(840),
+  endedAt: z.string().trim().refine(isValidLocalDateTime, "Enter a valid sleep end time."),
+  endedAtOffset: z.coerce.number().int().min(-840).max(840),
+  notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
+}).superRefine((value, context) => {
+  if (localDateTimeToUtc(value.endedAt, value.endedAtOffset) <= localDateTimeToUtc(value.startedAt, value.startedAtOffset)) {
+    context.addIssue({ code: "custom", path: ["endedAt"], message: "End time must be after the start time." });
+  }
+});
+
 const documentSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   displayName: z.string().trim().min(2, "Enter a short document label.").max(80, "Keep the label under 80 characters.").refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Remove control characters from the document label."),
@@ -378,6 +400,44 @@ export async function createMenstrualRecord(patientId: string, _previous: CareLo
   if (error) return { status: "error", message: "The private journal entry could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Private cycle note saved. It remains subject to the profile's consent settings." };
+}
+
+export async function createUrinationRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = urinationSchema.safeParse({ patientId, urinationType: formData.get("urinationType"), count: formData.get("count"), volumeMl: formData.get("volumeMl") ?? "", notes: formData.get("notes") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the urination log and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving a care log." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["infant", "child"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an infant or child profile is required." };
+  const role = relationship.relationship_role;
+  const source = role === "patient" ? "patient" : role === "doctor" ? "clinician" : "caregiver";
+  const { error } = await supabase.from("urination_records").insert({ patient_id: patientId, urination_type: parsed.data.urinationType, count: parsed.data.count, volume_ml: parsed.data.volumeMl ? Number(parsed.data.volumeMl) : null, notes: parsed.data.notes || null, source, verification_status: "unverified", created_by: user.id });
+  if (error) return { status: "error", message: "The care log could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Urination log saved as an unverified report." };
+}
+
+export async function createSleepRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = sleepSchema.safeParse({ patientId, sleepType: formData.get("sleepType"), startedAt: formData.get("startedAt"), startedAtOffset: formData.get("startedAtOffset") ?? "0", endedAt: formData.get("endedAt"), endedAtOffset: formData.get("endedAtOffset") ?? "0", notes: formData.get("notes") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the sleep times and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving a care log." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["infant", "child"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an infant or child profile is required." };
+  const role = relationship.relationship_role;
+  const source = role === "patient" ? "patient" : role === "doctor" ? "clinician" : "caregiver";
+  const { error } = await supabase.from("sleep_records").insert({ patient_id: patientId, sleep_type: parsed.data.sleepType, started_at: new Date(localDateTimeToUtc(parsed.data.startedAt, parsed.data.startedAtOffset)).toISOString(), ended_at: new Date(localDateTimeToUtc(parsed.data.endedAt, parsed.data.endedAtOffset)).toISOString(), notes: parsed.data.notes || null, source, verification_status: "unverified", created_by: user.id });
+  if (error) return { status: "error", message: "The sleep log could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Sleep log saved as an unverified report." };
 }
 
 export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {

@@ -1,21 +1,28 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, type ChangeEvent } from "react";
 import { Check, ClipboardList, Plus } from "lucide-react";
-import { createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createVomitingRecord, type CareLogFormState } from "./actions";
+import { createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createSleepRecord, createUrinationRecord, createVomitingRecord, type CareLogFormState } from "./actions";
 
 const initialState: CareLogFormState = { status: "idle", message: "" };
 
-function CareLogForm({ patientId, kind }: { patientId: string; kind: "feeding" | "bowel" | "vomiting" }) {
-  const actionCreator = kind === "feeding" ? createFeedingRecord : kind === "bowel" ? createBowelMovementRecord : createVomitingRecord;
+function updateTimezoneOffset(event: ChangeEvent<HTMLInputElement>, fieldName: string) {
+  const field = event.currentTarget.form?.elements.namedItem(fieldName);
+  if (field instanceof HTMLInputElement) field.value = event.currentTarget.value ? String(new Date(event.currentTarget.value).getTimezoneOffset()) : "0";
+}
+
+function CareLogForm({ patientId, kind }: { patientId: string; kind: "feeding" | "bowel" | "vomiting" | "urination" | "sleep" }) {
+  const actionCreator = kind === "feeding" ? createFeedingRecord : kind === "bowel" ? createBowelMovementRecord : kind === "vomiting" ? createVomitingRecord : kind === "urination" ? createUrinationRecord : createSleepRecord;
   const [state, action, pending] = useActionState(actionCreator.bind(null, patientId), initialState);
   const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => { if (state.status === "success") formRef.current?.reset(); }, [state]);
   const feeding = kind === "feeding";
   const vomiting = kind === "vomiting";
+  const urination = kind === "urination";
+  const sleep = kind === "sleep";
 
   return <details className="account-card account-entry-disclosure">
-    <summary className="account-card-heading"><div><span className="micro-label">{feeding ? "FEEDING LOG" : vomiting ? "VOMITING LOG" : "BOWEL MOVEMENT LOG"}</span><h2>{feeding ? "Add a feeding" : vomiting ? "Add a vomiting episode" : "Add a bowel movement"}</h2><p>Caregiver or patient report only; not a clinical assessment.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></summary>
+    <summary className="account-card-heading"><div><span className="micro-label">{feeding ? "FEEDING LOG" : vomiting ? "VOMITING LOG" : urination ? "URINATION LOG" : sleep ? "SLEEP LOG" : "BOWEL MOVEMENT LOG"}</span><h2>{feeding ? "Add a feeding" : vomiting ? "Add a vomiting episode" : urination ? "Add a urination entry" : sleep ? "Add a sleep period" : "Add a bowel movement"}</h2><p>Caregiver or patient report only; not a clinical assessment.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></summary>
     <form ref={formRef} action={action} className="account-profile-form timeline-form">
       {feeding ? <>
         <label htmlFor="feeding-type">Feeding type</label><select id="feeding-type" name="feedingType" defaultValue="breastfeeding"><option value="breastfeeding">Breastfeeding</option><option value="formula">Formula</option><option value="solid_food">Solid food</option><option value="other">Other</option></select>
@@ -25,6 +32,16 @@ function CareLogForm({ patientId, kind }: { patientId: string; kind: "feeding" |
       </> : vomiting ? <>
         <label htmlFor="vomiting-count">Number of episodes</label><input id="vomiting-count" name="count" type="number" min="1" max="50" step="1" defaultValue="1" required />
         <label htmlFor="vomiting-notes">Associated observations <span>(optional)</span></label><textarea id="vomiting-notes" name="associatedNotes" maxLength={500} rows={2} />
+      </> : urination ? <>
+        <label htmlFor="urination-type">Type</label><select id="urination-type" name="urinationType" defaultValue="wet_diaper"><option value="wet_diaper">Wet diaper</option><option value="toilet">Toilet</option><option value="other">Other</option></select>
+        <label htmlFor="urination-count">Number recorded</label><input id="urination-count" name="count" type="number" min="1" max="100" step="1" defaultValue="1" required />
+        <label htmlFor="urination-volume">Volume <span>(optional, ml)</span></label><input id="urination-volume" name="volumeMl" type="number" min="0.1" max="2000" step="0.1" inputMode="decimal" />
+        <label htmlFor="urination-notes">Observation <span>(optional)</span></label><textarea id="urination-notes" name="notes" maxLength={500} rows={2} />
+      </> : sleep ? <>
+        <label htmlFor="sleep-type">Type</label><select id="sleep-type" name="sleepType" defaultValue="overnight"><option value="nap">Nap</option><option value="overnight">Overnight</option><option value="other">Other</option></select>
+        <label htmlFor="sleep-start">Start date and time</label><input id="sleep-start" name="startedAt" type="datetime-local" onChange={(event) => updateTimezoneOffset(event, "startedAtOffset")} required /><input type="hidden" name="startedAtOffset" defaultValue="0" />
+        <label htmlFor="sleep-end">End date and time</label><input id="sleep-end" name="endedAt" type="datetime-local" onChange={(event) => updateTimezoneOffset(event, "endedAtOffset")} required /><input type="hidden" name="endedAtOffset" defaultValue="0" />
+        <label htmlFor="sleep-notes">Observation <span>(optional)</span></label><textarea id="sleep-notes" name="notes" maxLength={500} rows={2} />
       </> : <>
         <label htmlFor="bowel-consistency">Consistency <span>(optional)</span></label><input id="bowel-consistency" name="consistency" maxLength={60} placeholder="Short description" />
         <label htmlFor="bowel-color">Colour <span>(optional)</span></label><input id="bowel-color" name="color" maxLength={60} placeholder="Short description" />
@@ -45,6 +62,8 @@ export default function ChildCareForms({ patientId }: { patientId: string }) {
     <CareLogForm patientId={patientId} kind="feeding" />
     <CareLogForm patientId={patientId} kind="bowel" />
     <CareLogForm patientId={patientId} kind="vomiting" />
+    <CareLogForm patientId={patientId} kind="urination" />
+    <CareLogForm patientId={patientId} kind="sleep" />
     <details className="account-card account-entry-disclosure">
       <summary className="account-card-heading"><div><span className="micro-label">GROWTH MEASUREMENT</span><h2>Add a measurement</h2><p>Unverified measurements only; no growth percentile or assessment.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></summary>
       <form ref={growthFormRef} action={growthAction} className="account-profile-form timeline-form">

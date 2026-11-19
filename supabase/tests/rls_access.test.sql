@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(55);
+select extensions.plan(62);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -17,7 +17,8 @@ values
 insert into public.patient_profiles(id,created_by,display_name,life_stage)
 values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','11111111-1111-4111-8111-111111111111','Fictional adolescent A','adolescent'),
-  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','Fictional patient B','adult');
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','Fictional patient B','adult'),
+  ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','22222222-2222-4222-8222-222222222222','Fictional child C','child');
 
 insert into public.patient_sharing_sessions(patient_id,created_by,token_hash,expires_at)
 values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','11111111-1111-4111-8111-111111111111','fictional-sharing-token-hash',now()+interval '1 hour');
@@ -57,10 +58,16 @@ select extensions.is((select count(*) from public.health_events where patient_id
 select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,patient_profiles}'),1,'export includes only the caller-visible patient profile');
 select extensions.is((current_setting('medvita.test_export')::jsonb #> '{tables,patient_profiles}') @> jsonb_build_array(jsonb_build_object('id','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')),false,'export omits another patient profile');
 select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,health_events}'),2,'export includes only RLS-visible health events');
+select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,urination_records}'),0,'export includes an empty urination log list when no visible records exist');
+select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,sleep_records}'),0,'export includes an empty sleep log list when no visible records exist');
 select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,patient_sharing_sessions}'),1,'export includes the caller-visible sharing session');
 select extensions.is(coalesce(((current_setting('medvita.test_export')::jsonb #> '{tables,patient_sharing_sessions,0}') ? 'token_hash'),false),false,'export omits the sharing token hash');
 select extensions.is(current_setting('medvita.test_export')::jsonb #>> '{account_id}','11111111-1111-4111-8111-111111111111','export identifies the authenticated account');
 
+reset role;
+insert into public.patient_relationships(patient_id,user_id,relationship_role,can_read,can_write,status,created_by)
+values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','33333333-3333-4333-8333-333333333333','guardian',true,true,'active','22222222-2222-4222-8222-222222222222');
+set local role authenticated;
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
 select extensions.is((select count(*) from public.health_events where patient_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and visibility='general'),1::bigint,'guardian can read linked general event');
 select extensions.is((select count(*) from public.health_events where patient_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and visibility='sensitive_adolescent'),0::bigint,'guardian cannot read sensitive adolescent event without consent');
@@ -98,6 +105,13 @@ select extensions.lives_ok($$insert into public.growth_records(patient_id,weight
 select extensions.throws_ok($$insert into public.growth_records(patient_id,weight_kg,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',8.25,'11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add a growth measurement to another patient profile');
 select extensions.lives_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','blood_pressure_systolic',122,'mmHg','patient','11111111-1111-4111-8111-111111111111')$$,'patient with active write access can add own-profile vital reading');
 select extensions.throws_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','blood_pressure_systolic',122,'mmHg','patient','11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add a vital reading to another patient profile');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.lives_ok($$insert into public.urination_records(patient_id,urination_type,count,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','wet_diaper',3,'caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can add a child wet-diaper log');
+select extensions.throws_ok($$insert into public.urination_records(patient_id,urination_type,count,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','wet_diaper',3,'caregiver','33333333-3333-4333-8333-333333333333')$$,'42501',null,'caregiver cannot add child urination log to an adult or unlinked profile');
+select extensions.lives_ok($$insert into public.sleep_records(patient_id,sleep_type,started_at,ended_at,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','overnight','2026-11-19 19:00:00+00','2026-11-20 03:00:00+00','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can add a child sleep log');
+select extensions.throws_ok($$insert into public.sleep_records(patient_id,sleep_type,started_at,ended_at,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','overnight','2026-11-19 19:00:00+00','2026-11-20 03:00:00+00','caregiver','33333333-3333-4333-8333-333333333333')$$,'42501',null,'caregiver cannot add child sleep log to an adult or unlinked profile');
+select extensions.throws_ok($$insert into public.sleep_records(patient_id,sleep_type,started_at,ended_at,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','nap','2026-11-20 10:00:00+00','2026-11-20 09:00:00+00','caregiver','33333333-3333-4333-8333-333333333333')$$,'23514',null,'sleep log must end after it starts');
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select extensions.lives_ok($$insert into public.menstrual_records(patient_id,period_start,visibility,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-11-15','sensitive_adolescent','11111111-1111-4111-8111-111111111111')$$,'adolescent can add own private cycle record');
 select extensions.throws_ok($$insert into public.menstrual_records(patient_id,period_start,visibility,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-11-15','sensitive_adolescent','11111111-1111-4111-8111-111111111111')$$,'42501',null,'adolescent cannot add private cycle record to another patient');
 select extensions.lives_ok($$insert into public.appointments(id,patient_id,title,starts_at,created_by) values('ffffffff-ffff-4fff-8fff-ffffffffffff','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional authorized appointment','2026-11-21 03:30:00+00','11111111-1111-4111-8111-111111111111')$$,'patient with active write access can add an own-profile appointment');

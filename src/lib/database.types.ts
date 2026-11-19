@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.18"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       access_permissions: {
@@ -1637,6 +1662,56 @@ export type Database = {
         }
         Relationships: []
       }
+      sleep_records: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          ended_at: string
+          id: string
+          notes: string | null
+          patient_id: string
+          sleep_type: string
+          source: string
+          started_at: string
+          verification_status: string
+          visibility: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          ended_at: string
+          id?: string
+          notes?: string | null
+          patient_id: string
+          sleep_type: string
+          source?: string
+          started_at: string
+          verification_status?: string
+          visibility?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          ended_at?: string
+          id?: string
+          notes?: string | null
+          patient_id?: string
+          sleep_type?: string
+          source?: string
+          started_at?: string
+          verification_status?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sleep_records_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       symptom_observations: {
         Row: {
           created_at: string
@@ -1674,6 +1749,59 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "symptom_observations_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      urination_records: {
+        Row: {
+          count: number
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          patient_id: string
+          recorded_at: string
+          source: string
+          urination_type: string
+          verification_status: string
+          visibility: string
+          volume_ml: number | null
+        }
+        Insert: {
+          count?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          patient_id: string
+          recorded_at?: string
+          source?: string
+          urination_type: string
+          verification_status?: string
+          visibility?: string
+          volume_ml?: number | null
+        }
+        Update: {
+          count?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          patient_id?: string
+          recorded_at?: string
+          source?: string
+          urination_type?: string
+          verification_status?: string
+          visibility?: string
+          volume_ml?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "urination_records_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "patient_profiles"
@@ -2041,6 +2169,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

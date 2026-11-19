@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createMenstrualRecord, createSymptomObservation, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -77,6 +77,18 @@ function vitalForm(values: Record<string, string> = {}) {
 function menstrualForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ periodStart: "2026-11-03", periodEnd: "2026-11-07", flowNote: "Fictional sample note", symptomNote: "Fictional sample note", ...values })) form.set(key, value);
+  return form;
+}
+
+function urinationForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ urinationType: "wet_diaper", count: "3", volumeMl: "120", notes: "Fictional observation", ...values })) form.set(key, value);
+  return form;
+}
+
+function sleepForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ sleepType: "overnight", startedAt: "2026-11-20T08:00", startedAtOffset: "-330", endedAt: "2026-11-20T09:00", endedAtOffset: "-330", notes: "Fictional observation", ...values })) form.set(key, value);
   return form;
 }
 
@@ -342,6 +354,46 @@ describe("private adolescent cycle journal action", () => {
     const result = await createMenstrualRecord(patientId, { status: "idle", message: "" }, menstrualForm({ periodStart: "2026-11-09", periodEnd: "2026-11-02" }));
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/on or after the start date/i);
+    expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("child urination and sleep server actions", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "infant" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert: vi.fn().mockResolvedValue({ error: null }) });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("saves wet-diaper count and optional volume with caregiver provenance", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "infant" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createUrinationRecord(patientId, { status: "idle", message: "" }, urinationForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, urination_type: "wet_diaper", count: 3, volume_ml: 120, source: "caregiver", verification_status: "unverified", created_by: "user-1" }));
+  });
+
+  it("stores sleep periods as UTC instants after applying the local offset", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createSleepRecord(patientId, { status: "idle", message: "" }, sleepForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, sleep_type: "overnight", started_at: "2026-11-20T02:30:00.000Z", ended_at: "2026-11-20T03:30:00.000Z", source: "caregiver", created_by: "user-1" }));
+  });
+
+  it("rejects sleep periods whose end is before the start", async () => {
+    const result = await createSleepRecord(patientId, { status: "idle", message: "" }, sleepForm({ endedAt: "2026-11-20T07:30" }));
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/end time must be after/i);
     expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
   });
 });

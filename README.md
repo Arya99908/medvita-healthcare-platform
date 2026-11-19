@@ -22,14 +22,14 @@ The demo is intentionally synthetic. Notes and care logs use this browser's loca
 Use a dedicated MedVita Supabase project. Never point this prototype at another product's database.
 
 1. Copy `.env.example` to `.env.local` and set the project URL and publishable key. Do not expose a service-role key to browser code.
-2. The connected dedicated project is `Med-Vita` (`udjcnvwvlxnmsiacbqpl`, `ap-south-1`). The five migrations in `supabase/migrations/` have been applied. `src/lib/database.types.ts` is generated from this project.
+2. The connected dedicated project is `Med-Vita` (`udjcnvwvlxnmsiacbqpl`, `ap-south-1`). The migrations in `supabase/migrations/` have been applied. `src/lib/database.types.ts` is generated from this project.
 3. Generate client types with `supabase gen types typescript --project-id udjcnvwvlxnmsiacbqpl > src/lib/database.types.ts`.
 4. Local, MedVita preview, and production alias auth callback redirects are allow-listed. The production site URL is `https://medvita-healthcare-platform-the-vipers.vercel.app`.
 5. Run the fictional transaction-based access checks in `supabase/tests/rls_access.test.sql` against the linked dedicated project. The SQL test rolls back its fixtures and uses `finish(true)` to return a failure if an assertion fails.
 
 Optional live AI summary setup: set `AI_GATEWAY_API_KEY` and `MEDVITA_AI_MODEL` as server-side environment variables locally and in Vercel. Keep both private. A live call also requires a signed-in user and only uses a server-defined fictional sample; the feature never sends patient records. Without both values, it returns a clearly labeled static sample.
 
-The database contains 40 public tables, all with RLS enabled, and a private `medical-documents` bucket. The account export uses an invoker-privilege RPC so RLS applies, excludes sharing token hashes, and does not include uploaded file contents or browser-only demo data. The security advisor reported no findings after moving `SECURITY DEFINER` helpers out of the exposed `public` schema. `supabase db lint --linked` passes. Synthetic presentation profiles remain in the frontend and are not inserted into patient tables.
+The database contains 42 public tables, all with RLS enabled, and a private `medical-documents` bucket. Infant and child profiles include structured feeding, bowel, vomiting, growth, urination, and sleep logs. The account export uses an invoker-privilege RPC so RLS applies, excludes sharing token hashes, and does not include uploaded file contents or browser-only demo data. The security advisor reported no findings after moving `SECURITY DEFINER` helpers out of the exposed `public` schema. Synthetic presentation profiles remain in the frontend and are not inserted into patient tables.
 
 ## Delivery status
 
