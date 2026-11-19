@@ -1,10 +1,17 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, type ChangeEvent } from "react";
 import { Check, Plus } from "lucide-react";
 import { createHealthEvent, type HealthEventFormState } from "./actions";
 
 const initialState: HealthEventFormState = { status: "idle", message: "" };
+
+function updateTimezoneOffset(event: ChangeEvent<HTMLInputElement>) {
+  const field = event.currentTarget.form?.elements.namedItem("occurredAtOffset");
+  if (field instanceof HTMLInputElement) {
+    field.value = event.currentTarget.value ? String(new Date(event.currentTarget.value).getTimezoneOffset()) : "0";
+  }
+}
 
 export default function HealthEventForm({ patientId, lifeStage }: { patientId: string; lifeStage: string }) {
   const actionForPatient = createHealthEvent.bind(null, patientId);
@@ -13,7 +20,7 @@ export default function HealthEventForm({ patientId, lifeStage }: { patientId: s
 
   useEffect(() => {
     if (state.status === "success") formRef.current?.reset();
-  }, [state.status, state.message]);
+  }, [state]);
 
   return <section className="account-card" aria-labelledby="add-event-title">
     <div className="account-card-heading"><div><span className="micro-label">PERSONAL TIMELINE</span><h2 id="add-event-title">Add a note</h2><p>New entries are marked unverified and follow this profile&apos;s access rules.</p></div><span className="account-card-icon"><Plus size={18} /></span></div>
@@ -34,7 +41,8 @@ export default function HealthEventForm({ patientId, lifeStage }: { patientId: s
       <textarea id="event-description" name="description" maxLength={2000} rows={4} placeholder="Add a brief personal note" />
 
       <label htmlFor="event-occurred-at">Date and time <span>(optional)</span></label>
-      <input id="event-occurred-at" name="occurredAt" type="datetime-local" />
+      <input id="event-occurred-at" name="occurredAt" type="datetime-local" onChange={updateTimezoneOffset} />
+      <input type="hidden" name="occurredAtOffset" defaultValue="0" />
 
       {lifeStage === "adolescent" && <>
         <label htmlFor="event-visibility">Privacy</label>

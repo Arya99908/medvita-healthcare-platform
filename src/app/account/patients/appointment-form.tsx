@@ -1,0 +1,42 @@
+"use client";
+
+import { useActionState, useEffect, useRef, type ChangeEvent } from "react";
+import { CalendarDays, Check, Plus } from "lucide-react";
+import { createAppointment, type AppointmentFormState } from "./actions";
+
+const initialState: AppointmentFormState = { status: "idle", message: "" };
+
+function updateTimezoneOffset(event: ChangeEvent<HTMLInputElement>, fieldName: string) {
+  const field = event.currentTarget.form?.elements.namedItem(fieldName);
+  if (field instanceof HTMLInputElement) {
+    field.value = event.currentTarget.value ? String(new Date(event.currentTarget.value).getTimezoneOffset()) : "0";
+  }
+}
+
+export default function AppointmentForm({ patientId }: { patientId: string }) {
+  const actionForPatient = createAppointment.bind(null, patientId);
+  const [state, action, pending] = useActionState(actionForPatient, initialState);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    if (state.status === "success") formRef.current?.reset();
+  }, [state]);
+
+  return <section className="account-card" aria-labelledby="appointment-form-title">
+    <div className="account-card-heading"><div><span className="micro-label">CARE CALENDAR</span><h2 id="appointment-form-title">Add an appointment</h2><p>This records a plan; it does not book with a clinic or send a reminder.</p></div><span className="account-card-icon"><CalendarDays size={18} /></span></div>
+    <form ref={formRef} action={action} className="account-profile-form timeline-form">
+      <label htmlFor="appointment-title">Appointment</label>
+      <input id="appointment-title" name="title" minLength={2} maxLength={120} required placeholder="Clinic visit or care appointment" />
+      <label htmlFor="appointment-start">Date and time</label>
+      <input id="appointment-start" name="startsAt" type="datetime-local" onChange={(event) => updateTimezoneOffset(event, "startsAtOffset")} required />
+      <input type="hidden" name="startsAtOffset" defaultValue="0" />
+      <label htmlFor="appointment-end">End time <span>(optional)</span></label>
+      <input id="appointment-end" name="endsAt" type="datetime-local" onChange={(event) => updateTimezoneOffset(event, "endsAtOffset")} />
+      <input type="hidden" name="endsAtOffset" defaultValue="0" />
+      <label htmlFor="appointment-location">Location <span>(optional)</span></label>
+      <input id="appointment-location" name="location" maxLength={200} placeholder="Clinic or video visit details" />
+      {state.message && <p className={`account-form-message ${state.status}`} role="status">{state.status === "success" && <Check size={15} />}{state.message}</p>}
+      <button className="primary-button account-submit" type="submit" disabled={pending}><Plus size={16} />{pending ? "Saving…" : "Save appointment"}</button>
+    </form>
+  </section>;
+}

@@ -5,14 +5,53 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 
 export type HealthEventFormState = { status: "idle" | "error" | "success"; message: string };
+export type AppointmentFormState = HealthEventFormState;
+
+const localDateTimePattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+
+function isValidLocalDateTime(value: string) {
+  const match = localDateTimePattern.exec(value);
+  if (!match) return false;
+  const [, yearText, monthText, dayText, hourText, minuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  return year >= 1970 && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day && hour < 24 && minute < 60;
+}
+
+function localDateTimeToUtc(value: string, offsetMinutes: number) {
+  const match = localDateTimePattern.exec(value);
+  if (!match) return Number.NaN;
+  const [, year, month, day, hour, minute] = match.map(Number);
+  return Date.UTC(year, month - 1, day, hour, minute) + offsetMinutes * 60_000;
+}
 
 const eventSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   eventType: z.enum(["care_note", "symptom", "visit", "test_result", "other"]),
   title: z.string().trim().min(2, "Enter a short title.").max(120, "Keep the title under 120 characters."),
   description: z.string().trim().max(2000, "Keep the note under 2,000 characters.").optional().default(""),
-  occurredAt: z.string().trim().optional().default("").refine((value) => !value || !Number.isNaN(new Date(value).getTime()), "Enter a valid date and time."),
+  occurredAt: z.string().trim().optional().default("").refine((value) => !value || isValidLocalDateTime(value), "Enter a valid date and time."),
+  occurredAtOffset: z.coerce.number().int().min(-840).max(840),
   visibility: z.enum(["general", "sensitive_adolescent"]),
+});
+
+const appointmentSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  title: z.string().trim().min(2, "Enter an appointment title.").max(120, "Keep the title under 120 characters."),
+  startsAt: z.string().trim().min(1, "Choose a date and time.").refine(isValidLocalDateTime, "Enter a valid date and time."),
+  startsAtOffset: z.coerce.number().int().min(-840).max(840),
+  endsAt: z.string().trim().optional().default("").refine((value) => !value || isValidLocalDateTime(value), "Enter a valid end time."),
+  endsAtOffset: z.coerce.number().int().min(-840).max(840),
+  location: z.string().trim().max(200, "Keep the location under 200 characters.").optional().default(""),
+}).superRefine((value, context) => {
+  if (value.endsAt && localDateTimeToUtc(value.endsAt, value.endsAtOffset) <= localDateTimeToUtc(value.startsAt, value.startsAtOffset)) {
+    context.addIssue({ code: "custom", path: ["endsAt"], message: "End time must be after the start time." });
+  }
 });
 
 export async function createHealthEvent(patientId: string, _previous: HealthEventFormState, formData: FormData): Promise<HealthEventFormState> {
@@ -22,6 +61,7 @@ export async function createHealthEvent(patientId: string, _previous: HealthEven
     title: formData.get("title"),
     description: formData.get("description") ?? "",
     occurredAt: formData.get("occurredAt") ?? "",
+    occurredAtOffset: formData.get("occurredAtOffset") ?? "0",
     visibility: formData.get("visibility"),
   });
   if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the note details and try again." };
@@ -50,10 +90,52 @@ export async function createHealthEvent(patientId: string, _previous: HealthEven
     verification_status: "unverified",
     visibility: parsed.data.visibility,
     created_by: user.id,
-    ...(parsed.data.occurredAt ? { occurred_at: new Date(parsed.data.occurredAt).toISOString() } : {}),
+    ...(parsed.data.occurredAt ? { occurred_at: new Date(localDateTimeToUtc(parsed.data.occurredAt, parsed.data.occurredAtOffset)).toISOString() } : {}),
   });
 
   if (error) return { status: "error", message: "The note could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Note saved as an unverified entry." };
+}
+
+export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {
+  const parsed = appointmentSchema.safeParse({
+    patientId,
+    title: formData.get("title"),
+    startsAt: formData.get("startsAt"),
+    startsAtOffset: formData.get("startsAtOffset") ?? "0",
+    endsAt: formData.get("endsAt") ?? "",
+    endsAtOffset: formData.get("endsAtOffset") ?? "0",
+    location: formData.get("location") ?? "",
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the appointment details and try again." };
+
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before adding an appointment." };
+
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships")
+    .select("relationship_role,status,can_read,can_write")
+    .eq("patient_id", parsed.data.patientId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) {
+    return { status: "error", message: "You do not have active write access to this profile." };
+  }
+
+  const { error } = await supabase.from("appointments").insert({
+    patient_id: parsed.data.patientId,
+    title: parsed.data.title,
+    starts_at: new Date(localDateTimeToUtc(parsed.data.startsAt, parsed.data.startsAtOffset)).toISOString(),
+    ends_at: parsed.data.endsAt ? new Date(localDateTimeToUtc(parsed.data.endsAt, parsed.data.endsAtOffset)).toISOString() : null,
+    location: parsed.data.location || null,
+    status: "scheduled",
+    source: relationship.relationship_role === "patient" ? "patient" : relationship.relationship_role === "doctor" ? "clinician" : "caregiver",
+    created_by: user.id,
+    visibility: "general",
+  });
+
+  if (error) return { status: "error", message: "The appointment could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  return { status: "success", message: "Appointment saved." };
 }
