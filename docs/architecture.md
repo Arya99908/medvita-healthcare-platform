@@ -27,7 +27,7 @@ The app uses Next.js App Router, strict TypeScript, Tailwind CSS, and Lucide ico
 - OCR output is not a verified medical fact until a person reviews it.
 - Synthetic presentation profiles are not inserted into patient tables.
 
-The five migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlxnmsiacbqpl`, `ap-south-1`). All 40 public tables have RLS enabled; the medical-document bucket is private. After the security helper migration, the Supabase security advisor reported no findings. A transaction-based SQL suite checks 31 patient, guardian, clinician, sensitive-consent, export, timeline-write, appointment-write, medication-write, profile-creation, and pending-guardian cases with fictional fixture identities and rolls them back. It was run through `supabase db query --linked`; the standard `supabase test db --linked` command still requires local Docker/Podman. `supabase db lint --linked` reports no schema errors.
+The five migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlxnmsiacbqpl`, `ap-south-1`). All 40 public tables have RLS enabled; the medical-document bucket is private. After the security helper migration, the Supabase security advisor reported no findings. A transaction-based SQL suite checks 34 patient, guardian, clinician, sensitive-consent, export, timeline-write, appointment-write, medication-write/update, profile-creation, and pending-guardian cases with fictional fixture identities and rolls them back. It was run through `supabase db query --linked`; the standard `supabase test db --linked` command still requires local Docker/Podman. `supabase db lint --linked` reports no schema errors.
 
 ## Delivery checklist
 
@@ -39,12 +39,12 @@ The five migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlx
 | Supabase SSR client setup | Configured | Cookie-based clients, `proxy.ts`, and PKCE callback |
 | Core database schema | Applied | Five migrations; patient, relationships, consent, clinical, medication, documents, calendar, wellness, AI, alerts, notifications, RLS-aware account export |
 | Hosted database and RLS configuration | Applied | 40 public tables have RLS; private document bucket; security advisor clear |
-| RLS access-isolation verification | Passing | 31 fictional role/consent/export/timeline/appointment/medication cases run transactionally; standard `supabase test db --linked` still requires local Docker/Podman |
-| Patient record management | Partial | RLS-protected timeline-note, appointment-plan, and self-reported medicine-note create/read; edits, cancellation, medication schedules/logs, and role sharing workflows remain |
+| RLS access-isolation verification | Passing | 34 fictional role/consent/export/timeline/appointment/medication cases run transactionally; standard `supabase test db --linked` still requires local Docker/Podman |
+| Patient record management | Partial | RLS-protected timeline-note and appointment-plan create/read; self-reported medicine-note create/read and current/past status update; note edits, cancellation, medication schedules/logs, and role sharing workflows remain |
 | Role-specific care workflows | Not implemented | Doctor, caregiver, clinic, and platform admin screens remain |
 | AI/OCR/notifications/calendar integrations | Not implemented | Requires provider setup, backend paths, and reviewable error states |
 | Emergency demo | Implemented locally | User-initiated `tel:` links and fictional quick-reference card; no contact alert, location sharing, dispatch, or call confirmation |
-| Local checks | Passing | TypeScript, lint, 26 tests across five files (including timeline, appointment, and medicine-note actions), production build |
+| Local checks | Passing | TypeScript, lint, 28 tests across five files (including timeline, appointment, and medicine-note actions), production build |
 | GitHub | Complete | Private `Arya99908/medvita-healthcare-platform`; credentials and patient records excluded |
 | Vercel | Deployed | Protected production alias and preview; deployment protection requires Vercel team authentication |
 

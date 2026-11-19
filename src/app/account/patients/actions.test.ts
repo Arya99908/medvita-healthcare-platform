@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createHealthEvent, createMedication } from "./actions";
+import { createAppointment, createHealthEvent, createMedication, updateMedicationStatus } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -16,6 +16,16 @@ function query(result: unknown) {
   const chain = {
     select: vi.fn(() => chain),
     eq: vi.fn(() => chain),
+    maybeSingle: vi.fn().mockResolvedValue(result),
+  };
+  return chain;
+}
+
+function updateQuery(result: unknown) {
+  const chain = {
+    update: vi.fn(() => chain),
+    eq: vi.fn(() => chain),
+    select: vi.fn(() => chain),
     maybeSingle: vi.fn().mockResolvedValue(result),
   };
   return chain;
@@ -36,6 +46,12 @@ function appointmentForm(values: Record<string, string> = {}) {
 function medicationForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ medicineName: "Fictional sample medicine", genericName: "", strength: "As recorded", route: "By mouth", instructions: "Fictional directions", status: "active", visibility: "general", ...values })) form.set(key, value);
+  return form;
+}
+
+function medicationStatusForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ medicationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "historical", ...values })) form.set(key, value);
   return form;
 }
 
@@ -215,6 +231,43 @@ describe("medication server action", () => {
       : query({ data: { status: "pending", can_read: false, can_write: false }, error: null }));
 
     const result = await createMedication(patientId, { status: "idle", message: "" }, medicationForm());
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/active write access/i);
+    expect(mockSupabase.from).not.toHaveBeenCalledWith("medication_records");
+  });
+});
+
+describe("medication status server action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : updateQuery({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }, error: null }));
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("updates only the chosen medicine note for the authorized profile", async () => {
+    const update = updateQuery({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : update);
+
+    const result = await updateMedicationStatus(patientId, { status: "idle", message: "" }, medicationStatusForm());
+
+    expect(result).toEqual({ status: "success", message: "Medicine note marked as past or stopped." });
+    expect(update.update).toHaveBeenCalledWith({ status: "historical" });
+    expect(update.eq).toHaveBeenCalledWith("id", "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+    expect(update.eq).toHaveBeenCalledWith("patient_id", patientId);
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+  });
+
+  it("does not update a medicine note without active write access", async () => {
+    const update = updateQuery({ data: null, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: false }, error: null }) : update);
+
+    const result = await updateMedicationStatus(patientId, { status: "idle", message: "" }, medicationStatusForm());
 
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/active write access/i);

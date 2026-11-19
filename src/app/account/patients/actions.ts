@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 export type HealthEventFormState = { status: "idle" | "error" | "success"; message: string };
 export type AppointmentFormState = HealthEventFormState;
 export type MedicationFormState = HealthEventFormState;
+export type MedicationStatusFormState = HealthEventFormState;
 
 const localDateTimePattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 
@@ -64,6 +65,12 @@ const medicationSchema = z.object({
   instructions: z.string().trim().max(500, "Keep the directions under 500 characters.").optional().default(""),
   status: z.enum(["active", "historical"]),
   visibility: z.enum(["general", "sensitive_adolescent"]),
+});
+
+const medicationStatusSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  medicationId: z.string().uuid("Choose a valid medicine note."),
+  status: z.enum(["active", "historical"]),
 });
 
 export async function createHealthEvent(patientId: string, _previous: HealthEventFormState, formData: FormData): Promise<HealthEventFormState> {
@@ -195,4 +202,37 @@ export async function createMedication(patientId: string, _previous: MedicationF
   if (error) return { status: "error", message: "The medicine note could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Medicine note saved as unverified." };
+}
+
+export async function updateMedicationStatus(patientId: string, _previous: MedicationStatusFormState, formData: FormData): Promise<MedicationStatusFormState> {
+  const parsed = medicationStatusSchema.safeParse({
+    patientId,
+    medicationId: formData.get("medicationId"),
+    status: formData.get("status"),
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the medicine note and try again." };
+
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before updating this medicine note." };
+
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships")
+    .select("status,can_read,can_write")
+    .eq("patient_id", parsed.data.patientId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) {
+    return { status: "error", message: "You do not have active write access to this profile." };
+  }
+
+  const { data, error } = await supabase.from("medication_records")
+    .update({ status: parsed.data.status })
+    .eq("id", parsed.data.medicationId)
+    .eq("patient_id", parsed.data.patientId)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) return { status: "error", message: "This medicine note could not be updated. Check your access and try again." };
+
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  return { status: "success", message: parsed.data.status === "historical" ? "Medicine note marked as past or stopped." : "Medicine note listed as current." };
 }
