@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createHealthEvent, createMedication, updateAppointmentStatus, updateMedicationStatus } from "./actions";
+import { createAppointment, createHealthEvent, createMedication, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -10,6 +10,7 @@ const patientId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const mockSupabase = {
   auth: { getUser: vi.fn() },
   from: vi.fn(),
+  storage: { from: vi.fn() },
 };
 
 function query(result: unknown) {
@@ -58,6 +59,13 @@ function medicationStatusForm(values: Record<string, string> = {}) {
 function appointmentStatusForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ appointmentId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", status: "cancelled", ...values })) form.set(key, value);
+  return form;
+}
+
+function documentForm(file: File, values: Record<string, string> = {}) {
+  const form = new FormData();
+  form.set("file", file);
+  for (const [key, value] of Object.entries({ displayName: "Fictional sample report", documentType: "test_result", documentDate: "2026-11-20", visibility: "general", ...values })) form.set(key, value);
   return form;
 }
 
@@ -315,5 +323,66 @@ describe("appointment status server action", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/active write access/i);
     expect(mockSupabase.from).not.toHaveBeenCalledWith("appointments");
+  });
+});
+
+describe("patient document upload server action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("rejects a file whose contents do not match its declared type", async () => {
+    const file = new File(["not a real pdf"], "fictional.pdf", { type: "application/pdf" });
+
+    const result = await uploadPatientDocument(patientId, { status: "idle", message: "" }, documentForm(file));
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/does not match/i);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("uploads a signature-checked fictional PDF to the private path and saves unverified metadata", async () => {
+    const file = new File(["%PDF-1.4 fictional sample"], "do-not-store-this-name.pdf", { type: "application/pdf" });
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const storage = { upload, remove: vi.fn() };
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.storage.from.mockReturnValue(storage);
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+        : { insert });
+
+    const result = await uploadPatientDocument(patientId, { status: "idle", message: "" }, documentForm(file));
+
+    expect(result).toEqual({ status: "success", message: "Document uploaded as an unverified file." });
+    const storagePath = upload.mock.calls[0][0] as string;
+    expect(storagePath).toMatch(new RegExp(`^${patientId}/general/[0-9a-f-]+\\.pdf$`));
+    expect(storagePath).not.toContain(file.name);
+    expect(upload).toHaveBeenCalledWith(storagePath, file, { contentType: "application/pdf", upsert: false });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      patient_id: patientId,
+      storage_path: storagePath,
+      display_name: "Fictional sample report",
+      verification_status: "unverified",
+      upload_status: "uploaded",
+      uploaded_by: "user-1",
+    }));
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+  });
+
+  it("requires active write access before uploading files", async () => {
+    const file = new File(["%PDF-1.4 fictional sample"], "fictional.pdf", { type: "application/pdf" });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : query({ data: { status: "pending", can_read: false, can_write: false }, error: null }));
+
+    const result = await uploadPatientDocument(patientId, { status: "idle", message: "" }, documentForm(file));
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/active write access/i);
+    expect(mockSupabase.storage.from).not.toHaveBeenCalled();
   });
 });

@@ -35,16 +35,16 @@ The five migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlx
 |---|---|---|
 | Accessible life-stage presentation demo | Implemented | Six profiles, keyboard tabs, timed walkthrough, larger text, contrast control |
 | Demo interactions | Implemented | Local notes and age-aware care logs, medicine toggles, wellness checklist, appointment samples, fictional JSON export |
-| Account and profile entry | Implemented (limited) | Email/password sign-in, sign-up, and reset; list RLS-visible profiles; create adult self-profile or submit a pending minor guardian request; download an RLS-filtered JSON export; add and view unverified RLS-protected timeline notes, appointment plans, and self-reported medicine notes |
+| Account and profile entry | Implemented (limited) | Email/password sign-in, sign-up, and reset; list RLS-visible profiles; create adult self-profile or submit a pending minor guardian request; download an RLS-filtered JSON export; add/view unverified RLS-protected timeline notes, appointment plans, and self-reported medicine notes; upload/list supported private files |
 | Supabase SSR client setup | Configured | Cookie-based clients, `proxy.ts`, and PKCE callback |
 | Core database schema | Applied | Five migrations; patient, relationships, consent, clinical, medication, documents, calendar, wellness, AI, alerts, notifications, RLS-aware account export |
 | Hosted database and RLS configuration | Applied | 40 public tables have RLS; private document bucket; security advisor clear |
-| RLS access-isolation verification | Passing | 37 fictional role/consent/export/timeline/appointment/medication cases run transactionally; standard `supabase test db --linked` still requires local Docker/Podman |
-| Patient record management | Partial | RLS-protected timeline-note create/read; appointment-plan create/read/status update; self-reported medicine-note create/read/current-past status update; note detail edits, external clinic actions, medication schedules/logs, and role sharing workflows remain |
+| RLS access-isolation verification | Passing | 39 fictional role/consent/export/timeline/appointment/medication/document-metadata cases run transactionally; standard `supabase test db --linked` still requires local Docker/Podman |
+| Patient record management | Partial | RLS-protected timeline-note create/read; appointment-plan create/read/status update; self-reported medicine-note create/read/current-past status update; private PDF/JPG/PNG document upload/read up to 4 MB; note detail edits, OCR, external clinic actions, medication schedules/logs, and role sharing workflows remain |
 | Role-specific care workflows | Not implemented | Doctor, caregiver, clinic, and platform admin screens remain |
 | AI/OCR/notifications/calendar integrations | Not implemented | Requires provider setup, backend paths, and reviewable error states |
 | Emergency demo | Implemented locally | User-initiated `tel:` links and fictional quick-reference card; no contact alert, location sharing, dispatch, or call confirmation |
-| Local checks | Passing | TypeScript, lint, 30 tests across five files (including timeline, appointment, and medicine-note actions), production build |
+| Local checks | Passing | TypeScript, lint, 33 tests across five files (including timeline, appointment, medicine-note, and document-upload actions), production build |
 | GitHub | Complete | Private `Arya99908/medvita-healthcare-platform`; credentials and patient records excluded |
 | Vercel | Deployed | Protected production alias and preview; deployment protection requires Vercel team authentication |
 

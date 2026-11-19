@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 
@@ -9,6 +10,7 @@ export type AppointmentFormState = HealthEventFormState;
 export type AppointmentStatusFormState = HealthEventFormState;
 export type MedicationFormState = HealthEventFormState;
 export type MedicationStatusFormState = HealthEventFormState;
+export type DocumentFormState = HealthEventFormState;
 
 const localDateTimePattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 
@@ -79,6 +81,28 @@ const appointmentStatusSchema = z.object({
   appointmentId: z.string().uuid("Choose a valid appointment."),
   status: z.enum(["scheduled", "completed", "cancelled"]),
 });
+
+const documentSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  displayName: z.string().trim().min(2, "Enter a short document label.").max(80, "Keep the label under 80 characters.").refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Remove control characters from the document label."),
+  documentType: z.enum(["care_summary", "test_result", "prescription_copy", "other"]),
+  documentDate: z.string().trim().optional().default("").refine((value) => !value || isValidLocalDateTime(`${value}T00:00`), "Enter a valid document date."),
+  visibility: z.enum(["general", "sensitive_adolescent"]),
+});
+
+const documentMimeTypes = {
+  "application/pdf": "pdf",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+} as const;
+
+async function hasMatchingFileSignature(file: File) {
+  const bytes = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  if (file.type === "application/pdf") return new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-";
+  if (file.type === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (file.type === "image/png") return [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, index) => bytes[index] === byte);
+  return false;
+}
 
 export async function createHealthEvent(patientId: string, _previous: HealthEventFormState, formData: FormData): Promise<HealthEventFormState> {
   const parsed = eventSchema.safeParse({
@@ -276,4 +300,59 @@ export async function updateAppointmentStatus(patientId: string, _previous: Appo
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   const message = parsed.data.status === "cancelled" ? "Plan marked canceled in this profile." : parsed.data.status === "completed" ? "Plan marked complete in this profile." : "Plan returned to the scheduled list.";
   return { status: "success", message };
+}
+
+export async function uploadPatientDocument(patientId: string, _previous: DocumentFormState, formData: FormData): Promise<DocumentFormState> {
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { status: "error", message: "Choose a PDF, JPG, or PNG document." };
+  if (file.size > 4 * 1024 * 1024) return { status: "error", message: "The file must be 4 MB or smaller." };
+  if (!Object.hasOwn(documentMimeTypes, file.type) || !await hasMatchingFileSignature(file)) return { status: "error", message: "The file type does not match a supported PDF, JPG, or PNG file." };
+
+  const parsed = documentSchema.safeParse({
+    patientId,
+    displayName: formData.get("displayName"),
+    documentType: formData.get("documentType"),
+    documentDate: formData.get("documentDate") ?? "",
+    visibility: formData.get("visibility"),
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the document details and try again." };
+
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before uploading a document." };
+
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", parsed.data.patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", parsed.data.patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) {
+    return { status: "error", message: "You do not have active write access to this profile." };
+  }
+  if (parsed.data.visibility === "sensitive_adolescent" && profile.life_stage !== "adolescent") {
+    return { status: "error", message: "Sensitive adolescent documents can only be added to an adolescent profile." };
+  }
+
+  const storagePath = `${parsed.data.patientId}/${parsed.data.visibility}/${randomUUID()}.${documentMimeTypes[file.type as keyof typeof documentMimeTypes]}`;
+  const storage = supabase.storage.from("medical-documents");
+  const { error: uploadError } = await storage.upload(storagePath, file, { contentType: file.type, upsert: false });
+  if (uploadError) return { status: "error", message: "The file could not be uploaded. Check this profile’s document permissions and try again." };
+
+  const { error: metadataError } = await supabase.from("medical_documents").insert({
+    patient_id: parsed.data.patientId,
+    storage_path: storagePath,
+    document_type: parsed.data.documentType,
+    display_name: parsed.data.displayName,
+    document_date: parsed.data.documentDate || null,
+    upload_status: "uploaded",
+    verification_status: "unverified",
+    uploaded_by: user.id,
+    visibility: parsed.data.visibility,
+  });
+  if (metadataError) {
+    await storage.remove([storagePath]);
+    return { status: "error", message: "The document record could not be saved. Check your access and try again." };
+  }
+
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  return { status: "success", message: "Document uploaded as an unverified file." };
 }
