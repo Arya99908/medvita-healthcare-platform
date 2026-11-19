@@ -82,6 +82,14 @@ const appointmentStatusSchema = z.object({
   status: z.enum(["scheduled", "completed", "cancelled"]),
 });
 
+const symptomSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  symptom: z.string().trim().min(2, "Describe the observation briefly.").max(120, "Keep the description under 120 characters."),
+  severity: z.coerce.number().int().min(1).max(5),
+  notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
+  visibility: z.enum(["general", "sensitive_adolescent"]),
+});
+
 const documentSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   displayName: z.string().trim().min(2, "Enter a short document label.").max(80, "Keep the label under 80 characters.").refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Remove control characters from the document label."),
@@ -146,6 +154,43 @@ export async function createHealthEvent(patientId: string, _previous: HealthEven
   if (error) return { status: "error", message: "The note could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Note saved as an unverified entry." };
+}
+
+export async function createSymptomObservation(patientId: string, _previous: HealthEventFormState, formData: FormData): Promise<HealthEventFormState> {
+  const parsed = symptomSchema.safeParse({
+    patientId,
+    symptom: formData.get("symptom"),
+    severity: formData.get("severity"),
+    notes: formData.get("notes") ?? "",
+    visibility: formData.get("visibility"),
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the symptom details and try again." };
+
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before adding an observation." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) {
+    return { status: "error", message: "You do not have active write access to this profile." };
+  }
+  if (parsed.data.visibility === "sensitive_adolescent" && profile.life_stage !== "adolescent") {
+    return { status: "error", message: "Sensitive adolescent observations require an adolescent profile." };
+  }
+
+  const { error } = await supabase.from("symptom_observations").insert({
+    patient_id: patientId,
+    symptom: parsed.data.symptom,
+    severity: parsed.data.severity,
+    notes: parsed.data.notes || null,
+    visibility: parsed.data.visibility,
+    created_by: user.id,
+  });
+  if (error) return { status: "error", message: "The observation could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Self-reported observation saved as unverified." };
 }
 
 export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {

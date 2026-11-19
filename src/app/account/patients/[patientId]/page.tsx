@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, CalendarDays, Clock3, FileText, Pill, ShieldCheck } from "lucide-react";
+import { Activity, ArrowLeft, CalendarDays, Clock3, FileText, Pill, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import HealthEventForm from "../timeline-form";
 import AppointmentForm from "../appointment-form";
@@ -8,6 +8,7 @@ import AppointmentStatusForm from "../appointment-status-form";
 import MedicationForm from "../medication-form";
 import MedicationStatusForm from "../medication-status-form";
 import DocumentForm from "../document-form";
+import SymptomForm from "../symptom-form";
 import LocalDateTime from "@/components/local-date-time";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
@@ -31,6 +32,9 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   const { data: events, error: eventsError } = canRead
     ? await supabase.from("health_events").select("id,event_type,title,description,occurred_at,verification_status,visibility").eq("patient_id", patientId).order("occurred_at", { ascending: false })
     : { data: [], error: null };
+  const { data: symptoms, error: symptomsError } = canRead
+    ? await supabase.from("symptom_observations").select("id,symptom,severity,notes,observed_at,visibility").eq("patient_id", patientId).order("observed_at", { ascending: false })
+    : { data: [], error: null };
   const { data: appointments, error: appointmentsError } = canRead
     ? await supabase.from("appointments").select("id,title,starts_at,ends_at,location,status").eq("patient_id", patientId).order("starts_at", { ascending: true })
     : { data: [], error: null };
@@ -51,6 +55,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       <div className="account-welcome"><span className="micro-label">{stageLabels[profile.life_stage] ?? "PATIENT"} TIMELINE</span><h1>{profile.display_name}</h1><p>Personal entries for this profile, subject to its current access permissions.</p></div>
       <div className="account-safety-note"><ShieldCheck size={17} /><span>Use fictional data only. Entries are unverified personal notes, not diagnoses, prescriptions, or medical advice.</span></div>
       {canWrite && <HealthEventForm patientId={patientId} lifeStage={profile.life_stage} />}
+      {canWrite && <SymptomForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && <AppointmentForm patientId={patientId} />}
       {canWrite && <MedicationForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && <DocumentForm patientId={patientId} lifeStage={profile.life_stage} />}
@@ -59,6 +64,11 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
         {documentsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Documents could not be loaded</strong><span>Reload the page or sign in again.</span></div>
           : documentsWithLinks.length ? <div className="timeline-event-list">{documentsWithLinks.map((document) => <article key={document.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{document.document_type.replaceAll("_", " ")}</span><span className="timeline-verification">{document.verification_status === "verified" ? "Verified" : "Unverified file"}</span></div><h3>{document.display_name}</h3>{document.document_date && <p>Document date: {document.document_date}</p>}{document.downloadUrl ? <a className="account-record-link" href={document.downloadUrl} rel="noreferrer">Download file</a> : <p>Download is unavailable; reload the page to try again.</p>}</article>)}</div>
             : <div className="account-empty-state"><FileText size={22} /><strong>No documents saved</strong><span>Only fictional files should be used in this prototype.</span></div>}
+      </section>}
+      {canRead && <section className="account-card" aria-labelledby="symptoms-title"><div className="account-card-heading"><div><span className="micro-label">SYMPTOM LOG</span><h2 id="symptoms-title">Observations</h2><p>Self-reported entries; severity is not a clinical assessment.</p></div><span className="account-card-icon"><Activity size={18} /></span></div>
+        {symptomsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Observations could not be loaded</strong><span>Reload the page or sign in again.</span></div>
+          : symptoms?.length ? <div className="timeline-event-list">{symptoms.map((observation) => <article key={observation.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">Severity {observation.severity} of 5 · unverified</span><LocalDateTime value={observation.observed_at} /></div><h3>{observation.symptom}</h3>{observation.notes && <p>{observation.notes}</p>}</article>)}</div>
+            : <div className="account-empty-state"><Activity size={22} /><strong>No observations saved</strong><span>Self-reported entries appear here when available to this profile.</span></div>}
       </section>}
       {canRead && <section className="account-card" aria-labelledby="medication-list-title"><div className="account-card-heading"><div><span className="micro-label">MEDICINE NOTES</span><h2 id="medication-list-title">Medicines</h2><p>Self-reported entries are not prescriptions or dose guidance.</p></div><span className="account-card-icon"><Pill size={18} /></span></div>
         {medicationsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Medicine notes could not be loaded</strong><span>Reload the page or sign in again.</span></div>

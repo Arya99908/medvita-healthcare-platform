@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createHealthEvent, createMedication, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createHealthEvent, createMedication, createSymptomObservation, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -35,6 +35,12 @@ function updateQuery(result: unknown) {
 function eventForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ eventType: "care_note", title: "Fictional sample", description: "Synthetic note", occurredAt: "", visibility: "general", ...values })) form.set(key, value);
+  return form;
+}
+
+function symptomForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ symptom: "Fictional sample observation", severity: "2", notes: "Fictional note", visibility: "general", ...values })) form.set(key, value);
   return form;
 }
 
@@ -139,6 +145,35 @@ describe("health event server action", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/adolescent profile/i);
     expect(mockSupabase.from).not.toHaveBeenCalledWith("health_events");
+  });
+});
+
+describe("symptom observation server action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("requires active write access before saving a symptom observation", async () => {
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : query({ data: { status: "pending", can_read: false, can_write: false }, error: null }));
+    const result = await createSymptomObservation(patientId, { status: "idle", message: "" }, symptomForm());
+    expect(result.status).toBe("error");
+    expect(mockSupabase.from).not.toHaveBeenCalledWith("symptom_observations");
+  });
+
+  it("stores an unverified severity observation for the authorized patient", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+        : { insert });
+    const result = await createSymptomObservation(patientId, { status: "idle", message: "" }, symptomForm());
+    expect(result).toEqual({ status: "success", message: "Self-reported observation saved as unverified." });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, symptom: "Fictional sample observation", severity: 2, created_by: "user-1" }));
   });
 });
 
