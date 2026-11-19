@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createHealthEvent, createMedication, updateMedicationStatus } from "./actions";
+import { createAppointment, createHealthEvent, createMedication, updateAppointmentStatus, updateMedicationStatus } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -52,6 +52,12 @@ function medicationForm(values: Record<string, string> = {}) {
 function medicationStatusForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ medicationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "historical", ...values })) form.set(key, value);
+  return form;
+}
+
+function appointmentStatusForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ appointmentId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", status: "cancelled", ...values })) form.set(key, value);
   return form;
 }
 
@@ -272,5 +278,42 @@ describe("medication status server action", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/active write access/i);
     expect(mockSupabase.from).not.toHaveBeenCalledWith("medication_records");
+  });
+});
+
+describe("appointment status server action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : updateQuery({ data: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" }, error: null }));
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("marks only the chosen plan canceled for an authorized profile", async () => {
+    const update = updateQuery({ data: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : update);
+
+    const result = await updateAppointmentStatus(patientId, { status: "idle", message: "" }, appointmentStatusForm());
+
+    expect(result).toEqual({ status: "success", message: "Plan marked canceled in this profile." });
+    expect(update.update).toHaveBeenCalledWith({ status: "cancelled" });
+    expect(update.eq).toHaveBeenCalledWith("id", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+    expect(update.eq).toHaveBeenCalledWith("patient_id", patientId);
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+  });
+
+  it("does not change appointment status without active write access", async () => {
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: false }, error: null })
+      : updateQuery({ data: null, error: null }));
+
+    const result = await updateAppointmentStatus(patientId, { status: "idle", message: "" }, appointmentStatusForm());
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/active write access/i);
+    expect(mockSupabase.from).not.toHaveBeenCalledWith("appointments");
   });
 });
