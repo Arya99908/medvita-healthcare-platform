@@ -316,6 +316,26 @@ describe("adult and senior vital server action", () => {
     expect(result.status).toBe("success");
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, vital_type: "blood_pressure_systolic", value: 122, unit: "mmHg", source: "patient", verification_status: "unverified", created_by: "user-1" }));
   });
+
+  it("allows a caregiver to record temperature for an infant or child", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "infant" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createVitalRecord(patientId, { status: "idle", message: "" }, vitalForm({ vitalType: "temperature", value: "38.2" }));
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, vital_type: "temperature", value: 38.2, unit: "°C", source: "caregiver", verification_status: "unverified", created_by: "user-1" }));
+  });
+
+  it("does not allow non-temperature vitals for a child profile", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createVitalRecord(patientId, { status: "idle", message: "" }, vitalForm({ vitalType: "blood_pressure_systolic" }));
+    expect(result.status).toBe("error");
+    expect(insert).not.toHaveBeenCalled();
+  });
 });
 
 describe("private adolescent cycle journal action", () => {

@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(62);
+select extensions.plan(64);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -103,9 +103,12 @@ select extensions.lives_ok($$insert into public.vomiting_records(patient_id,coun
 select extensions.throws_ok($$insert into public.vomiting_records(patient_id,count,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',2,'11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add a vomiting log to another patient profile');
 select extensions.lives_ok($$insert into public.growth_records(patient_id,weight_kg,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',8.25,'11111111-1111-4111-8111-111111111111')$$,'patient with active write access can add own-profile growth measurement');
 select extensions.throws_ok($$insert into public.growth_records(patient_id,weight_kg,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',8.25,'11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add a growth measurement to another patient profile');
-select extensions.lives_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','blood_pressure_systolic',122,'mmHg','patient','11111111-1111-4111-8111-111111111111')$$,'patient with active write access can add own-profile vital reading');
-select extensions.throws_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','blood_pressure_systolic',122,'mmHg','patient','11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add a vital reading to another patient profile');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.lives_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','blood_pressure_systolic',122,'mmHg','patient','22222222-2222-4222-8222-222222222222')$$,'adult with active write access can add own-profile vital reading');
+select extensions.throws_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','blood_pressure_systolic',122,'mmHg','patient','22222222-2222-4222-8222-222222222222')$$,'42501',null,'adult cannot add a vital reading to another patient profile');
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.lives_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','temperature',38.2,'°C','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can record a child temperature');
+select extensions.throws_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','blood_pressure_systolic',110,'mmHg','caregiver','33333333-3333-4333-8333-333333333333')$$,'42501',null,'child vitals are limited to temperature readings');
 select extensions.lives_ok($$insert into public.urination_records(patient_id,urination_type,count,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','wet_diaper',3,'caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can add a child wet-diaper log');
 select extensions.throws_ok($$insert into public.urination_records(patient_id,urination_type,count,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','wet_diaper',3,'caregiver','33333333-3333-4333-8333-333333333333')$$,'42501',null,'caregiver cannot add child urination log to an adult or unlinked profile');
 select extensions.lives_ok($$insert into public.sleep_records(patient_id,sleep_type,started_at,ended_at,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','overnight','2026-11-19 19:00:00+00','2026-11-20 03:00:00+00','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can add a child sleep log');

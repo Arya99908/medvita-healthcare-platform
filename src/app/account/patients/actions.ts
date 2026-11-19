@@ -365,7 +365,9 @@ export async function createVitalRecord(patientId: string, _previous: CareLogFor
     supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
     supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
   ]);
-  if (profileError || relationshipError || !profile || !["adult", "senior"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an adult or senior profile is required." };
+  const isAdultStage = profile && ["adult", "senior"].includes(profile.life_stage);
+  const isChildTemperature = profile && ["infant", "child"].includes(profile.life_stage) && parsed.data.vitalType === "temperature";
+  if (profileError || relationshipError || !profile || (!isAdultStage && !isChildTemperature) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Adults and seniors can add vital readings; infant and child profiles can record temperature only." };
   const range = vitalRanges[parsed.data.vitalType];
   const role = relationship.relationship_role;
   const source = role === "patient" ? "patient" : role === "doctor" ? "clinician" : "caregiver";
