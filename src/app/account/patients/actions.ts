@@ -106,6 +106,12 @@ const bowelSchema = z.object({
   notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
 });
 
+const vomitingSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  count: z.coerce.number().int().min(1).max(50),
+  associatedNotes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
+});
+
 const documentSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   displayName: z.string().trim().min(2, "Enter a short document label.").max(80, "Keep the label under 80 characters.").refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Remove control characters from the document label."),
@@ -238,6 +244,23 @@ export async function createBowelMovementRecord(patientId: string, _previous: Ca
   ]);
   if (profileError || relationshipError || !profile || !["infant", "child"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an infant or child profile is required." };
   const { error } = await supabase.from("bowel_movement_records").insert({ patient_id: patientId, consistency: parsed.data.consistency || null, color: parsed.data.color || null, notes: parsed.data.notes || null, created_by: user.id });
+  if (error) return { status: "error", message: "The care log could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Care log saved as a caregiver or patient report." };
+}
+
+export async function createVomitingRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = vomitingSchema.safeParse({ patientId, count: formData.get("count"), associatedNotes: formData.get("associatedNotes") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the care log and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving a care log." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["infant", "child"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an infant or child profile is required." };
+  const { error } = await supabase.from("vomiting_records").insert({ patient_id: patientId, count: parsed.data.count, associated_notes: parsed.data.associatedNotes || null, created_by: user.id });
   if (error) return { status: "error", message: "The care log could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Care log saved as a caregiver or patient report." };

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createFeedingRecord, createHealthEvent, createMedication, createSymptomObservation, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createFeedingRecord, createHealthEvent, createMedication, createSymptomObservation, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -53,6 +53,12 @@ function feedingForm(values: Record<string, string> = {}) {
 function bowelForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ consistency: "Fictional sample", color: "Fictional sample", notes: "Fictional observation", ...values })) form.set(key, value);
+  return form;
+}
+
+function vomitingForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ count: "2", associatedNotes: "Fictional observation", ...values })) form.set(key, value);
   return form;
 }
 
@@ -229,6 +235,16 @@ describe("child care log server actions", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/infant or child/i);
     expect(mockSupabase.from).not.toHaveBeenCalledWith("feeding_records");
+  });
+
+  it("saves a vomiting episode count and associated note for a child profile", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createVomitingRecord(patientId, { status: "idle", message: "" }, vomitingForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, count: 2, associated_notes: "Fictional observation", created_by: "user-1" }));
   });
 });
 
