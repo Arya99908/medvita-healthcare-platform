@@ -27,7 +27,7 @@ The app uses Next.js App Router, strict TypeScript, Tailwind CSS, and Lucide ico
 - OCR output is not a verified medical fact until a person reviews it.
 - Synthetic presentation profiles are not inserted into patient tables.
 
-The five migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlxnmsiacbqpl`, `ap-south-1`). All 40 public tables have RLS enabled; the medical-document bucket is private. After the security helper migration, the Supabase security advisor reported no findings. A transaction-based SQL suite checks 25 patient, guardian, clinician, sensitive-consent, export, profile-creation, and pending-guardian cases with fictional fixture identities and rolls them back. It was run through `supabase db query --linked`; the standard `supabase test db --linked` command still requires local Docker/Podman. `supabase db lint --linked` reports no schema errors.
+The five migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlxnmsiacbqpl`, `ap-south-1`). All 40 public tables have RLS enabled; the medical-document bucket is private. After the security helper migration, the Supabase security advisor reported no findings. A transaction-based SQL suite checks 27 patient, guardian, clinician, sensitive-consent, export, timeline-write, profile-creation, and pending-guardian cases with fictional fixture identities and rolls them back. It was run through `supabase db query --linked`; the standard `supabase test db --linked` command still requires local Docker/Podman. `supabase db lint --linked` reports no schema errors.
 
 ## Delivery checklist
 
@@ -35,16 +35,16 @@ The five migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlx
 |---|---|---|
 | Accessible life-stage presentation demo | Implemented | Six profiles, keyboard tabs, timed walkthrough, larger text, contrast control |
 | Demo interactions | Implemented | Local notes and age-aware care logs, medicine toggles, wellness checklist, appointment samples, fictional JSON export |
-| Account and profile entry | Implemented (limited) | Email/password sign-in, sign-up, and reset; list RLS-visible profiles; create adult self-profile or submit a pending minor guardian request; download an RLS-filtered JSON export |
+| Account and profile entry | Implemented (limited) | Email/password sign-in, sign-up, and reset; list RLS-visible profiles; create adult self-profile or submit a pending minor guardian request; download an RLS-filtered JSON export; add and view unverified RLS-protected timeline notes |
 | Supabase SSR client setup | Configured | Cookie-based clients, `proxy.ts`, and PKCE callback |
 | Core database schema | Applied | Five migrations; patient, relationships, consent, clinical, medication, documents, calendar, wellness, AI, alerts, notifications, RLS-aware account export |
 | Hosted database and RLS configuration | Applied | 40 public tables have RLS; private document bucket; security advisor clear |
 | RLS access-isolation verification | Passing | 25 fictional role/consent/export cases run transactionally; standard `supabase test db --linked` still requires local Docker/Podman |
-| Patient CRUD and sharing | Not implemented | Needs server-side authorization and isolation tests |
+| Patient record management | Partial | RLS-protected timeline note create/read; edit/delete, medication/appointment CRUD, and role sharing workflows remain |
 | Role-specific care workflows | Not implemented | Doctor, caregiver, clinic, and platform admin screens remain |
 | AI/OCR/notifications/calendar integrations | Not implemented | Requires provider setup, backend paths, and reviewable error states |
 | Emergency demo | Implemented locally | User-initiated `tel:` links and fictional quick-reference card; no contact alert, location sharing, dispatch, or call confirmation |
-| Local checks | Passing | TypeScript, lint, six demo tests, four account action tests, four password-recovery tests, two export route tests, production build |
+| Local checks | Passing | TypeScript, lint, six demo tests, four profile action tests, four timeline action tests, four password-recovery tests, two export route tests, production build |
 | GitHub | Complete | Private `Arya99908/medvita-healthcare-platform`; credentials and patient records excluded |
 | Vercel | Deployed | Protected production alias and preview; deployment protection requires Vercel team authentication |
 
