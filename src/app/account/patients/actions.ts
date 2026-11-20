@@ -311,6 +311,11 @@ const documentSchema = z.object({
   visibility: z.enum(["general", "sensitive_adolescent"]),
 });
 
+const documentRemovalSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  documentId: z.string().uuid("Choose a valid document."),
+});
+
 const documentMimeTypes = {
   "application/pdf": "pdf",
   "image/jpeg": "jpg",
@@ -1110,6 +1115,49 @@ export async function uploadPatientDocument(patientId: string, _previous: Docume
 
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Document uploaded as an unverified file." };
+}
+
+export async function removePatientDocument(patientId: string, documentId: string, _previous: DocumentFormState, _formData: FormData): Promise<DocumentFormState> {
+  void _previous;
+  void _formData;
+  const parsed = documentRemovalSchema.safeParse({ patientId, documentId });
+  if (!parsed.success) return { status: "error", message: "Choose a valid document and try again." };
+
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before removing this file." };
+
+  const [{ data: document, error: documentError }, { data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("medical_documents").select("id,storage_path,uploaded_by,upload_status").eq("id", parsed.data.documentId).eq("patient_id", parsed.data.patientId).maybeSingle(),
+    supabase.from("patient_profiles").select("created_by").eq("id", parsed.data.patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("status,can_read,can_write,relationship_role").eq("patient_id", parsed.data.patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (documentError || profileError || relationshipError || !document || !profile
+    || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) {
+    return { status: "error", message: "This file could not be checked. Confirm you have active write access and try again." };
+  }
+  if (document.upload_status === "deleted") return { status: "success", message: "This file has already been removed." };
+  if (document.upload_status !== "uploaded") return { status: "error", message: "Only a successfully uploaded file can be removed." };
+  const isPatient = relationship.relationship_role === "patient";
+  if (document.uploaded_by !== user.id && profile.created_by !== user.id && !isPatient) {
+    return { status: "error", message: "Only the person who uploaded this file or the patient can remove it." };
+  }
+
+  const { error: extractionError } = await supabase.from("extracted_document_data").delete()
+    .eq("document_id", document.id).eq("patient_id", parsed.data.patientId);
+  if (extractionError) return { status: "error", message: "Saved OCR review text could not be removed. The original file is still available." };
+
+  const { error: storageError } = await supabase.storage.from("medical-documents").remove([document.storage_path]);
+  if (storageError) return { status: "error", message: "The private file could not be removed. Try again or contact support." };
+
+  const { data: updated, error: updateError } = await supabase.from("medical_documents")
+    .update({ upload_status: "deleted" }).eq("id", document.id).eq("patient_id", parsed.data.patientId)
+    .eq("upload_status", "uploaded").select("id").maybeSingle();
+  if (updateError || !updated) return { status: "error", message: "The file was removed, but its record could not be updated. Reload and retry to finish cleanup." };
+
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  revalidatePath(`/account/patients/${parsed.data.patientId}/reports`);
+  return { status: "success", message: "File and saved OCR text removed. A deletion record remains so linked health records and audit history stay intact." };
 }
 
 export async function createEmergencyContact(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {

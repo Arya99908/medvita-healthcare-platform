@@ -5,8 +5,8 @@ import DocumentLibrary from "./document-library";
 vi.mock("./document-ocr", () => ({ default: () => <div>OCR tools</div> }));
 
 const documents = [
-  { id: "doc-1", display_name: "Care plan", document_type: "care_summary", document_date: "2026-11-02", verification_status: "unverified", mimeType: "application/pdf", downloadUrl: "/private/care", previewUrl: "/private/care-preview", extractions: [] },
-  { id: "doc-2", display_name: "Blood panel", document_type: "test_result", document_date: "2026-10-12", verification_status: "unverified", mimeType: "image/png", downloadUrl: "/private/test", previewUrl: "/private/test-preview", extractions: [] },
+  { id: "doc-1", display_name: "Care plan", document_type: "care_summary", document_date: "2026-11-02", verification_status: "unverified", uploaded_by: "user-a", mimeType: "application/pdf", downloadUrl: "/private/care", previewUrl: "/private/care-preview", canDelete: false, extractions: [] },
+  { id: "doc-2", display_name: "Blood panel", document_type: "test_result", document_date: "2026-10-12", verification_status: "unverified", uploaded_by: "user-a", mimeType: "image/png", downloadUrl: "/private/test", previewUrl: "/private/test-preview", canDelete: false, extractions: [] },
 ];
 
 describe("private document library", () => {

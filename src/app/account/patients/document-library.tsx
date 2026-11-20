@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { FileText, Search } from "lucide-react";
 import type { Json } from "@/lib/database.types";
 import DocumentOCR from "./document-ocr";
+import DocumentDeleteForm from "./document-delete-form";
 
 type Extraction = { id: string; extracted_fields: Json; review_status: string; created_at: string };
 export type DocumentLibraryItem = {
@@ -13,9 +14,11 @@ export type DocumentLibraryItem = {
   document_type: string;
   document_date: string | null;
   verification_status: string;
+  uploaded_by: string | null;
   mimeType: string;
   downloadUrl: string | null;
   previewUrl: string | null;
+  canDelete: boolean;
   extractions: Extraction[];
 };
 
@@ -53,6 +56,7 @@ export default function DocumentLibrary({ patientId, documents, canWrite }: { pa
       {document.downloadUrl ? <a className="account-record-link" href={document.downloadUrl} rel="noreferrer">Download file</a> : <p>Download is unavailable; reload the page to try again.</p>}
       <details className="document-preview"><summary>Preview original document</summary>{document.previewUrl ? document.mimeType === "application/pdf" ? <iframe src={document.previewUrl} title={`Preview of ${document.display_name}`} loading="lazy" /> : <Image src={document.previewUrl} alt={`Preview of ${document.display_name}`} width={1200} height={900} unoptimized style={{ width: "100%", height: "auto", maxHeight: 650, objectFit: "contain" }} /> : <p>Preview is unavailable. Reload the page to create a new private link.</p>}</details>
       <DocumentOCR patientId={patientId} documentId={document.id} documentName={document.display_name} mimeType={document.mimeType} downloadUrl={document.downloadUrl} canWrite={canWrite} extractions={document.extractions} />
+      {document.canDelete && <DocumentDeleteForm patientId={patientId} documentId={document.id} />}
     </article>)}</div>
       : documents.length ? <div className="account-empty-state"><Search size={22} /><strong>No matching documents</strong><span>Try a different name or type filter.</span></div>
         : <div className="account-empty-state"><FileText size={22} /><strong>No documents saved</strong><span>Only fictional files should be used in this prototype.</span></div>}

@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(176);
+select extensions.plan(181);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -30,6 +30,9 @@ values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','11111111-1111-4111-8111-111111111111','Fictional adolescent A','adolescent'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','Fictional patient B','adult'),
   ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','22222222-2222-4222-8222-222222222222','Fictional child C','child');
+
+insert into public.medical_documents(id,patient_id,storage_path,document_type,display_name,upload_status,uploaded_by)
+values('f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/general/fictional-report.pdf','test_result','Fictional report','uploaded','22222222-2222-4222-8222-222222222222');
 
 insert into public.patient_sharing_sessions(patient_id,created_by,token_hash,expires_at)
 values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','11111111-1111-4111-8111-111111111111','fictional-sharing-token-hash',now()+interval '1 hour');
@@ -379,6 +382,14 @@ select extensions.is((select verification_status from public.doctors where user_
 select extensions.is((select count(*) from public.audit_logs where actor_user_id='66666666-6666-4666-8666-666666666666' and action='doctor_application_verified' and resource_type='doctor'),1::bigint,'doctor verification decision is recorded in the administrator audit log');
 select extensions.is((select count(*) from public.audit_logs where resource_type='doctor' and action='doctor_application_verified'),1::bigint,'platform administrator can review the doctor decision history');
 select extensions.is((select count(*) from public.audit_logs where resource_type='patient'),0::bigint,'platform administrator does not receive general patient audit history');
+
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.throws_ok($$update public.medical_documents set upload_status='deleted' where id='f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1'$$,'42501',null,'a writable caregiver cannot remove another uploader file');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.lives_ok($$update public.medical_documents set upload_status='deleted' where id='f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1'$$,'uploader can record a document deletion tombstone');
+select extensions.ok((select deleted_at is not null and deleted_by='22222222-2222-4222-8222-222222222222' from public.medical_documents where id='f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1'),'deletion tombstone records when and who removed the file');
+select extensions.is((select count(*) from public.audit_logs where actor_user_id='22222222-2222-4222-8222-222222222222' and action='document_file_removed' and resource_type='medical_document'),1::bigint,'document removal creates a user-owned audit entry');
+select extensions.throws_ok($$update public.medical_documents set upload_status='uploaded' where id='f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1'$$,'42501',null,'removed document records cannot be restored to active');
 
 reset role;
 -- Raise an error if any assertion fails so `supabase db query` returns non-zero.

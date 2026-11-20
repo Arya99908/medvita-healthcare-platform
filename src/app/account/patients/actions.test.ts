@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, logMedicationAdministration, recordEmergencyAlert, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -1283,5 +1283,59 @@ describe("patient document upload server action", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/active write access/i);
     expect(mockSupabase.storage.from).not.toHaveBeenCalled();
+  });
+});
+
+describe("patient document removal server action", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("requires a valid document and patient before creating a client", async () => {
+    const result = await removePatientDocument(patientId, "not-a-uuid", { status: "idle", message: "" }, new FormData());
+    expect(result.status).toBe("error");
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("does not let an unrelated writable caregiver remove another user's file", async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+    mockSupabase.from.mockImplementation((table: string) => table === "medical_documents"
+      ? query({ data: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", storage_path: `${patientId}/general/file.pdf`, uploaded_by: "uploader", upload_status: "uploaded" }, error: null })
+      : table === "patient_profiles" ? query({ data: { created_by: "profile-owner" }, error: null })
+        : query({ data: { status: "active", can_read: true, can_write: true, relationship_role: "caregiver" }, error: null }));
+
+    const result = await removePatientDocument(patientId, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", { status: "idle", message: "" }, new FormData());
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/only the person who uploaded/i);
+    expect(mockSupabase.storage.from).not.toHaveBeenCalled();
+  });
+
+  it("removes OCR text and private storage before recording a deletion tombstone", async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+    const documentId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const storagePath = `${patientId}/general/file.pdf`;
+    const extractionChain = { delete: vi.fn(), eq: vi.fn(), then: vi.fn() };
+    extractionChain.delete.mockReturnValue(extractionChain);
+    extractionChain.eq.mockReturnValue(extractionChain);
+    extractionChain.then.mockImplementation((resolve: (value: unknown) => unknown) => Promise.resolve({ error: null }).then(resolve));
+    const storageRemove = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.storage.from.mockReturnValue({ remove: storageRemove });
+    const update = updateQuery({ data: { id: documentId }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "medical_documents"
+      ? mockSupabase.from.mock.calls.filter(([name]) => name === "medical_documents").length === 1
+        ? query({ data: { id: documentId, storage_path: storagePath, uploaded_by: "user-1", upload_status: "uploaded" }, error: null })
+        : update
+      : table === "patient_profiles" ? query({ data: { created_by: "profile-owner" }, error: null })
+        : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true, relationship_role: "caregiver" }, error: null })
+          : extractionChain);
+
+    const result = await removePatientDocument(patientId, documentId, { status: "idle", message: "" }, new FormData());
+
+    expect(result.status).toBe("success");
+    expect(storageRemove).toHaveBeenCalledWith([storagePath]);
+    expect(extractionChain.delete).toHaveBeenCalled();
+    expect(update.update).toHaveBeenCalledWith({ upload_status: "deleted" });
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
   });
 });

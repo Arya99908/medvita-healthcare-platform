@@ -37,7 +37,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   if (authError || !user) redirect("/login");
 
   const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
-    supabase.from("patient_profiles").select("id,display_name,life_stage,date_of_birth").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_profiles").select("id,display_name,life_stage,date_of_birth,created_by").eq("id", patientId).maybeSingle(),
     supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
   ]);
   if (profileError || relationshipError || !profile) notFound();
@@ -112,7 +112,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     ? await supabase.from("medication_administration_logs").select("id,medication_id,schedule_id,status,administered_at,recorded_by,notes").eq("patient_id", patientId).order("administered_at", { ascending: false }).limit(100)
     : { data: [], error: null };
   const { data: documents, error: documentsError } = canRead
-    ? await supabase.from("medical_documents").select("id,display_name,document_type,document_date,storage_path,upload_status,verification_status,visibility,created_at").eq("patient_id", patientId).order("created_at", { ascending: false })
+    ? await supabase.from("medical_documents").select("id,display_name,document_type,document_date,storage_path,upload_status,verification_status,visibility,uploaded_by,created_at").eq("patient_id", patientId).neq("upload_status", "deleted").order("created_at", { ascending: false })
     : { data: [], error: null };
   const documentIds = (documents ?? []).map((document) => document.id);
   const { data: documentExtractions, error: documentExtractionsError } = canRead && documentIds.length > 0
@@ -126,7 +126,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     ]);
     const extension = document.storage_path.split(".").pop()?.toLowerCase();
     const mimeType = extension === "pdf" ? "application/pdf" : extension === "png" ? "image/png" : "image/jpeg";
-    return { ...document, mimeType, downloadUrl: download?.signedUrl ?? null, previewUrl: preview?.signedUrl ?? null, extractions: (documentExtractions ?? []).filter((item) => item.document_id === document.id) };
+    return { ...document, mimeType, downloadUrl: download?.signedUrl ?? null, previewUrl: preview?.signedUrl ?? null, canDelete: Boolean(canWrite && (document.uploaded_by === user.id || profile.created_by === user.id || relationship.relationship_role === "patient")), extractions: (documentExtractions ?? []).filter((item) => item.document_id === document.id) };
   }));
   const { data: aiReports, error: aiReportsError } = canRead
     ? await supabase.from("ai_reports").select("id,created_at,date_range_start,date_range_end,report_json,review_status").eq("patient_id", patientId).eq("report_type", "patient_history_summary").eq("visibility", "general").order("created_at", { ascending: false }).limit(5)
