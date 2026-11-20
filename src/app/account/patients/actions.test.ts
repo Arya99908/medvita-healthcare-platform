@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, deleteStructuredHealthRecord, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, updateStructuredHealthRecord, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -34,8 +34,14 @@ function updateQuery(result: unknown) {
 }
 
 function deleteQuery(result: unknown) {
-  const chain = { delete: vi.fn(() => chain), eq: vi.fn(() => chain), in: vi.fn(() => chain), select: vi.fn(() => chain), maybeSingle: vi.fn().mockResolvedValue(result) };
+  const chain = { delete: vi.fn(() => chain), eq: vi.fn(() => chain), in: vi.fn(() => chain), match: vi.fn(() => chain), select: vi.fn(() => chain), maybeSingle: vi.fn().mockResolvedValue(result) };
   return chain;
+}
+
+function structuredRecordForm(recordType: string, values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ patientId, recordId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", recordType, ...values })) form.set(key, value);
+  return form;
 }
 
 function listQuery(result: unknown) {
@@ -1336,6 +1342,80 @@ describe("patient document removal server action", () => {
     expect(storageRemove).toHaveBeenCalledWith([storagePath]);
     expect(extractionChain.delete).toHaveBeenCalled();
     expect(update.update).toHaveBeenCalledWith({ upload_status: "deleted" });
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+  });
+});
+
+describe("structured health record editing and removal", () => {
+  const recordId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("requires a signed-in account before editing a record", async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: null }, error: new Error("signed out") });
+    const result = await updateStructuredHealthRecord({ status: "idle", message: "" }, structuredRecordForm("symptom", { symptom: "Sample observation", severity: "2", notes: "" }));
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/sign in/i);
+    expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("edits only the author's unverified condition and records both changed fields", async () => {
+    const update = updateQuery({ data: { id: recordId }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "patient", status: "active", can_read: true, can_write: true }, error: null })
+        : update);
+
+    const result = await updateStructuredHealthRecord({ status: "idle", message: "" }, structuredRecordForm("medical_condition", { name: "Fictional condition", status: "resolved", diagnosed_on: "2024-02-03", notes: "Changed sample" }));
+
+    expect(result.status).toBe("success");
+    expect(update.update).toHaveBeenCalledWith({ name: "Fictional condition", status: "resolved", diagnosed_on: "2024-02-03", notes: "Changed sample" });
+    expect(update.eq).toHaveBeenCalledWith("created_by", "user-1");
+    expect(update.eq).toHaveBeenCalledWith("verification_status", "unverified");
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}/reports`);
+  });
+
+  it("rejects a planned vaccination update without a due date", async () => {
+    const result = await updateStructuredHealthRecord({ status: "idle", message: "" }, structuredRecordForm("vaccination", { vaccine_name: "Sample vaccine", dose_label: "", status: "planned", due_on: "", administered_on: "", notes: "" }));
+    expect(result.status).toBe("error");
+    expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("rejects a vital correction outside the existing entry bounds", async () => {
+    const result = await updateStructuredHealthRecord({ status: "idle", message: "" }, structuredRecordForm("vital", { vital_type: "temperature", value: "99" }));
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/25 to 45/);
+    expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("does not allow a caregiver to edit an adolescent's private cycle notes", async () => {
+    const profileQuery = query({ data: { id: patientId, life_stage: "adolescent" }, error: null });
+    const relationshipQuery = query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles" ? profileQuery : table === "patient_relationships" ? relationshipQuery : { update: vi.fn() });
+
+    const result = await updateStructuredHealthRecord({ status: "idle", message: "" }, structuredRecordForm("menstrual", { period_start: "2026-05-01", period_end: "2026-05-05", flow_note: "", symptom_note: "" }));
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/only the adolescent account/i);
+    expect(mockSupabase.from).not.toHaveBeenCalledWith("menstrual_records");
+  });
+
+  it("deletes only the author's child-care record and revalidates the timeline", async () => {
+    const removal = deleteQuery({ data: { id: recordId }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "infant" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null })
+        : removal);
+
+    const result = await deleteStructuredHealthRecord({ status: "idle", message: "" }, structuredRecordForm("feeding"));
+
+    expect(result.status).toBe("success");
+    expect(removal.delete).toHaveBeenCalled();
+    expect(removal.eq).toHaveBeenCalledWith("created_by", "user-1");
     expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
   });
 });

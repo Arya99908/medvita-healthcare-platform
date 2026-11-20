@@ -303,6 +303,45 @@ const milestoneSchema = z.object({
   if (value.status === "follow_up" && !value.followUpOn) context.addIssue({ code: "custom", path: ["followUpOn"], message: "Add a follow-up date for this observation." });
 });
 
+const structuredRecordBase = z.object({
+  patientId: z.string().uuid("Choose a valid profile."),
+  recordId: z.string().uuid("Choose a valid record."),
+});
+const nullableText = (max: number) => z.string().trim().max(max).transform((value) => value || null);
+const nullableNumber = (min: number, max: number, decimals = 2) => z.preprocess(
+  (value) => value === "" || value === null ? null : Number(value),
+  z.number().finite().min(min).max(max).nullable(),
+).refine((value) => value === null || Number(value.toFixed(decimals)) === value, "Enter a valid number of decimal places.");
+const dateOnly = z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid date.");
+const structuredRecordUpdateSchema = z.discriminatedUnion("recordType", [
+  structuredRecordBase.extend({ recordType: z.literal("symptom"), symptom: z.string().trim().min(2).max(120), severity: z.coerce.number().int().min(1).max(5), notes: nullableText(500) }),
+  structuredRecordBase.extend({ recordType: z.literal("medical_condition"), name: z.string().trim().min(2).max(100), status: z.enum(["active", "resolved", "historical"]), diagnosed_on: dateOnly, notes: nullableText(500) }),
+  structuredRecordBase.extend({ recordType: z.literal("vital"), vital_type: z.enum(Object.keys(vitalRanges) as [keyof typeof vitalRanges, ...(keyof typeof vitalRanges)[]]), value: z.coerce.number().finite() }).superRefine((input, context) => {
+    const range = vitalRanges[input.vital_type];
+    if (input.value < range.min || input.value > range.max) context.addIssue({ code: "custom", path: ["value"], message: `Enter a value from ${range.min} to ${range.max} ${range.unit}.` });
+  }),
+  structuredRecordBase.extend({ recordType: z.literal("feeding"), feeding_type: z.enum(["breastfeeding", "formula", "solid_food", "other"]), quantity_ml: nullableNumber(0, 2000, 1), duration_minutes: nullableNumber(0, 600, 0), notes: nullableText(500) }),
+  structuredRecordBase.extend({ recordType: z.literal("bowel"), consistency: nullableText(60), color: nullableText(60), notes: nullableText(500) }),
+  structuredRecordBase.extend({ recordType: z.literal("vomiting"), count: z.coerce.number().int().min(1).max(100), associated_notes: nullableText(500) }),
+  structuredRecordBase.extend({ recordType: z.literal("growth"), weight_kg: nullableNumber(0.01, 250), height_cm: nullableNumber(0.01, 300), head_circumference_cm: nullableNumber(0.01, 100) }).superRefine((value, context) => {
+    if (value.weight_kg === null && value.height_cm === null && value.head_circumference_cm === null) context.addIssue({ code: "custom", message: "Enter at least one measurement." });
+  }),
+  structuredRecordBase.extend({ recordType: z.literal("urination"), urination_type: z.enum(["wet_diaper", "toilet", "other"]), count: z.coerce.number().int().min(1).max(100), volume_ml: nullableNumber(0.1, 5000, 1), notes: nullableText(500) }),
+  structuredRecordBase.extend({ recordType: z.literal("sleep"), sleep_type: z.enum(["nap", "overnight", "other"]), notes: nullableText(500) }),
+  structuredRecordBase.extend({ recordType: z.literal("vaccination"), vaccine_name: z.string().trim().min(2).max(100), dose_label: nullableText(60), status: z.enum(["planned", "administered", "cancelled"]), due_on: dateOnly, administered_on: dateOnly, notes: nullableText(500) }).superRefine((value, context) => {
+    if (value.status === "planned" && !value.due_on) context.addIssue({ code: "custom", path: ["due_on"], message: "Add a due date for a planned vaccination." });
+    if ((value.status === "administered") !== Boolean(value.administered_on)) context.addIssue({ code: "custom", path: ["administered_on"], message: "An administered record needs an administered date, and other statuses must not have one." });
+  }),
+  structuredRecordBase.extend({ recordType: z.literal("developmental"), milestone_name: z.string().trim().min(2).max(100), domain: z.enum(["motor", "communication", "cognitive", "social_emotional", "self_care", "other"]), status: z.enum(["observed", "not_observed", "follow_up"]), recorded_on: z.string().trim().refine(isValidDateOnly, "Enter a valid observation date."), follow_up_on: dateOnly, notes: nullableText(500) }).superRefine((value, context) => {
+    if (value.status === "follow_up" && !value.follow_up_on) context.addIssue({ code: "custom", path: ["follow_up_on"], message: "Add a follow-up date for this observation." });
+  }),
+  structuredRecordBase.extend({ recordType: z.literal("menstrual"), period_start: dateOnly, period_end: dateOnly, flow_note: nullableText(500), symptom_note: nullableText(500) }).superRefine((value, context) => {
+    if (value.period_start && value.period_end && value.period_end < value.period_start) context.addIssue({ code: "custom", path: ["period_end"], message: "The end date must be on or after the start date." });
+  }),
+]);
+type StructuredRecordType = z.infer<typeof structuredRecordUpdateSchema>["recordType"];
+const structuredRecordDeleteSchema = structuredRecordBase.extend({ recordType: z.enum(["symptom", "medical_condition", "vital", "feeding", "bowel", "vomiting", "growth", "urination", "sleep", "vaccination", "developmental", "menstrual"]) });
+
 const documentSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   displayName: z.string().trim().min(2, "Enter a short document label.").max(80, "Keep the label under 80 characters.").refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Remove control characters from the document label."),
@@ -736,6 +775,124 @@ export async function createDevelopmentalMilestone(patientId: string, _previous:
   if (error) return { status: "error", message: "The milestone observation could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Observation saved as an unverified caregiver entry." };
+}
+
+function isStructuredRecordAllowedForStage(recordType: StructuredRecordType, lifeStage: string) {
+  if (recordType === "symptom") return ["infant", "child", "adolescent", "adult", "senior"].includes(lifeStage);
+  if (recordType === "medical_condition" || recordType === "vital") return ["adult", "senior", "infant", "child"].includes(lifeStage);
+  if (recordType === "menstrual") return lifeStage === "adolescent";
+  return ["infant", "child"].includes(lifeStage);
+}
+
+async function getStructuredRecordEditor(patientId: string) {
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { ok: false as const, message: "Sign in again before changing this record." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) {
+    return { ok: false as const, message: "Active write access to this profile is required." };
+  }
+  return { ok: true as const, supabase, user, profile, relationship };
+}
+
+export async function updateStructuredHealthRecord(_previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = structuredRecordUpdateSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the record details and try again." };
+  const edit = await getStructuredRecordEditor(parsed.data.patientId);
+  if (!edit.ok) return { status: "error", message: edit.message };
+  if (!isStructuredRecordAllowedForStage(parsed.data.recordType, edit.profile.life_stage)) return { status: "error", message: "This record type does not apply to the selected profile stage." };
+  if (parsed.data.recordType === "menstrual" && edit.relationship.relationship_role !== "patient") return { status: "error", message: "Only the adolescent account can change private cycle notes." };
+
+  let failed = false;
+  switch (parsed.data.recordType) {
+    case "symptom": {
+      const { error, data } = await edit.supabase.from("symptom_observations").update({ symptom: parsed.data.symptom, severity: parsed.data.severity, notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "medical_condition": {
+      if (!["adult", "senior"].includes(edit.profile.life_stage)) return { status: "error", message: "Condition notes can be changed on adult or senior profiles." };
+      const { error, data } = await edit.supabase.from("medical_conditions").update({ name: parsed.data.name, status: parsed.data.status, diagnosed_on: parsed.data.diagnosed_on || null, notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "vital": {
+      const allowed = ["adult", "senior"].includes(edit.profile.life_stage) || (["infant", "child"].includes(edit.profile.life_stage) && parsed.data.vital_type === "temperature");
+      if (!allowed) return { status: "error", message: "Child profiles can only change temperature records; adult and senior profiles can change their own readings." };
+      const { error, data } = await edit.supabase.from("vitals").update({ value: parsed.data.value }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("vital_type", parsed.data.vital_type).eq("verification_status", "unverified").select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "feeding": {
+      const { error, data } = await edit.supabase.from("feeding_records").update({ feeding_type: parsed.data.feeding_type, quantity_ml: parsed.data.quantity_ml, duration_minutes: parsed.data.duration_minutes, notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "bowel": {
+      const { error, data } = await edit.supabase.from("bowel_movement_records").update({ consistency: parsed.data.consistency, color: parsed.data.color, notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "vomiting": {
+      const { error, data } = await edit.supabase.from("vomiting_records").update({ count: parsed.data.count, associated_notes: parsed.data.associated_notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "growth": {
+      const { error, data } = await edit.supabase.from("growth_records").update({ weight_kg: parsed.data.weight_kg, height_cm: parsed.data.height_cm, head_circumference_cm: parsed.data.head_circumference_cm }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "urination": {
+      const { error, data } = await edit.supabase.from("urination_records").update({ urination_type: parsed.data.urination_type, count: parsed.data.count, volume_ml: parsed.data.volume_ml, notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "sleep": {
+      const { error, data } = await edit.supabase.from("sleep_records").update({ sleep_type: parsed.data.sleep_type, notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "vaccination": {
+      const { error, data } = await edit.supabase.from("vaccination_records").update({ vaccine_name: parsed.data.vaccine_name, dose_label: parsed.data.dose_label, status: parsed.data.status, due_on: parsed.data.due_on || null, administered_on: parsed.data.administered_on || null, notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "developmental": {
+      const { error, data } = await edit.supabase.from("developmental_milestones").update({ milestone_name: parsed.data.milestone_name, domain: parsed.data.domain, status: parsed.data.status, recorded_on: parsed.data.recorded_on, follow_up_on: parsed.data.follow_up_on || null, notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+    case "menstrual": {
+      const { error, data } = await edit.supabase.from("menstrual_records").update({ period_start: parsed.data.period_start || null, period_end: parsed.data.period_end || null, flow_note: parsed.data.flow_note, symptom_note: parsed.data.symptom_note }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle();
+      failed = Boolean(error || !data); break;
+    }
+  }
+  if (failed) return { status: "error", message: "This record is unavailable, belongs to another author, or cannot be changed under current access and consent." };
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  revalidatePath(`/account/patients/${parsed.data.patientId}/reports`);
+  return { status: "success", message: "Your changes were saved. The activity history records the change." };
+}
+
+export async function deleteStructuredHealthRecord(_previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = structuredRecordDeleteSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { status: "error", message: "Choose a valid record and try again." };
+  const edit = await getStructuredRecordEditor(parsed.data.patientId);
+  if (!edit.ok) return { status: "error", message: edit.message };
+  if (!isStructuredRecordAllowedForStage(parsed.data.recordType, edit.profile.life_stage)) return { status: "error", message: "This record type does not apply to the selected profile stage." };
+  if (parsed.data.recordType === "menstrual" && edit.relationship.relationship_role !== "patient") return { status: "error", message: "Only the adolescent account can remove private cycle notes." };
+
+  let failed = false;
+  switch (parsed.data.recordType) {
+    case "symptom": { const { error, data } = await edit.supabase.from("symptom_observations").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "medical_condition": { if (!["adult", "senior"].includes(edit.profile.life_stage)) return { status: "error", message: "Condition notes can be removed from adult or senior profiles." }; const { error, data } = await edit.supabase.from("medical_conditions").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "vital": { const child = ["infant", "child"].includes(edit.profile.life_stage); const { error, data } = await edit.supabase.from("vitals").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").match(child ? { vital_type: "temperature" } : {}).select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "feeding": { const { error, data } = await edit.supabase.from("feeding_records").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "bowel": { const { error, data } = await edit.supabase.from("bowel_movement_records").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "vomiting": { const { error, data } = await edit.supabase.from("vomiting_records").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "growth": { const { error, data } = await edit.supabase.from("growth_records").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "urination": { const { error, data } = await edit.supabase.from("urination_records").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "sleep": { const { error, data } = await edit.supabase.from("sleep_records").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "vaccination": { const { error, data } = await edit.supabase.from("vaccination_records").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "developmental": { const { error, data } = await edit.supabase.from("developmental_milestones").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+    case "menstrual": { const { error, data } = await edit.supabase.from("menstrual_records").delete().eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).select("id").maybeSingle(); failed = Boolean(error || !data); break; }
+  }
+  if (failed) return { status: "error", message: "This record is unavailable, belongs to another author, or cannot be changed under current access and consent." };
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  revalidatePath(`/account/patients/${parsed.data.patientId}/reports`);
+  return { status: "success", message: "Your record was removed. The profile activity history retains a removal event." };
 }
 
 export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {

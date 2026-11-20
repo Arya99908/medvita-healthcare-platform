@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(181);
+select extensions.plan(190);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -59,6 +59,12 @@ values('cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb
 
 insert into public.menstrual_records(patient_id,period_start,period_end,flow_note,visibility,created_by)
 values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-11-03','2026-11-07','Fictional private cycle note','sensitive_adolescent','11111111-1111-4111-8111-111111111111');
+insert into public.medical_conditions(id,patient_id,name,verification_status,created_by)
+values
+  ('edededed-eded-4ded-8ded-edededededed','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional unverified condition','unverified','22222222-2222-4222-8222-222222222222'),
+  ('efefefef-efef-4fef-8fef-efefefefefef','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional verified condition','verified','22222222-2222-4222-8222-222222222222');
+insert into public.feeding_records(id,patient_id,feeding_type,created_by)
+values('abababab-abab-4bab-8bab-abababababac','cccccccc-cccc-4ccc-8ccc-ccccccccccc1','formula','22222222-2222-4222-8222-222222222222');
 
 insert into public.medication_records(id,patient_id,medicine_name,status,created_by)
 values('dddddddd-dddd-4ddd-8ddd-dddddddddddd','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional patient B medicine','active','22222222-2222-4222-8222-222222222222');
@@ -268,6 +274,26 @@ with removed as (delete from public.health_events where id='cdcdcdcd-cdcd-4cdc-8
 select extensions.is((select count(*) from removed),0::bigint,'linked writer cannot remove another users unverified timeline note');
 reset role;
 select extensions.is((select medicine_name from public.medication_records where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'Fictional patient B medicine','linked caregiver update leaves the medicine note unchanged');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+with changed as (update public.medical_conditions set name='Fictional caregiver edit' where id='edededed-eded-4ded-8ded-edededededed' returning id)
+select extensions.is((select count(*) from changed),0::bigint,'linked caregiver cannot edit another author condition record');
+with removed as (delete from public.medical_conditions where id='edededed-eded-4ded-8ded-edededededed' returning id)
+select extensions.is((select count(*) from removed),0::bigint,'linked caregiver cannot remove another author condition record');
+with changed as (update public.feeding_records set feeding_type='solid_food' where id='abababab-abab-4bab-8bab-abababababac' returning id)
+select extensions.is((select count(*) from changed),0::bigint,'child caregiver cannot edit another author feeding record');
+reset role;
+select extensions.is((select feeding_type from public.feeding_records where id='abababab-abab-4bab-8bab-abababababac'),'formula','unauthorized feeding correction leaves the record unchanged');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.lives_ok($$update public.medical_conditions set name='Fictional corrected condition' where id='edededed-eded-4ded-8ded-edededededed'$$,'author can edit their own unverified condition record');
+select extensions.is((select count(*) from public.patient_activity_events where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and resource_type='medical_conditions' and resource_id='edededed-eded-4ded-8ded-edededededed' and action='record_updated' and actor_user_id='22222222-2222-4222-8222-222222222222'),1::bigint,'condition correction remains in the privacy-filtered activity history');
+with changed as (update public.medical_conditions set name='Fictional verified edit' where id='efefefef-efef-4fef-8fef-efefefefefef' returning id)
+select extensions.is((select count(*) from changed),0::bigint,'author cannot edit a verified condition record');
+with removed as (delete from public.medical_conditions where id='edededed-eded-4ded-8ded-edededededed' returning id)
+select extensions.is((select count(*) from removed),1::bigint,'author can remove their own unverified condition record');
+reset role;
+select extensions.is((select count(*) from public.patient_activity_events where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and resource_type='medical_conditions' and resource_id='edededed-eded-4ded-8ded-edededededed' and action='record_removed' and actor_user_id='22222222-2222-4222-8222-222222222222'),1::bigint,'condition removal remains in the privacy-filtered activity history');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.lives_ok($$update public.health_events set title='Fictional corrected own note' where id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd'$$,'author can edit their own unverified timeline note');
