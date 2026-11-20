@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { parseDocumentOCRCandidates } from "@/lib/document-ocr-candidates";
 
 export type DocumentOCRActionState = { status: "idle" | "error" | "success"; message: string };
 
@@ -10,10 +11,20 @@ const patientIdSchema = z.string().uuid();
 const documentIdSchema = z.string().uuid();
 const extractedTextSchema = z.string().trim().min(1).max(30_000);
 const saveSchema = z.object({ patientId: patientIdSchema, documentId: documentIdSchema, text: extractedTextSchema });
+const candidateFieldsSchema = z.object({
+  documentDate: z.string().trim().max(4_000),
+  patientDetails: z.string().trim().max(4_000),
+  medicineNames: z.string().trim().max(4_000),
+  laboratoryValues: z.string().trim().max(4_000),
+  referenceRanges: z.string().trim().max(4_000),
+  doctorDetails: z.string().trim().max(4_000),
+  relevantFindings: z.string().trim().max(4_000),
+});
 const reviewSchema = z.object({
   patientId: patientIdSchema,
   extractionId: z.string().uuid(),
-  text: extractedTextSchema,
+  rawText: extractedTextSchema,
+  candidates: candidateFieldsSchema,
   status: z.enum(["accepted", "rejected"]),
 });
 
@@ -40,7 +51,7 @@ export async function saveDocumentOCR(_previous: DocumentOCRActionState, formDat
   const { error } = await access.supabase.from("extracted_document_data").insert({
     patient_id: parsed.data.patientId,
     document_id: document.id,
-    extracted_fields: { rawText: parsed.data.text, extractionMethod: "on_device_ocr", language: "eng" },
+    extracted_fields: { rawText: parsed.data.text, candidates: parseDocumentOCRCandidates(parsed.data.text), extractionMethod: "on_device_ocr", language: "eng" },
     review_status: "pending",
     reviewed_by: null,
     reviewed_at: null,
@@ -52,7 +63,13 @@ export async function saveDocumentOCR(_previous: DocumentOCRActionState, formDat
 }
 
 export async function reviewDocumentOCR(_previous: DocumentOCRActionState, formData: FormData): Promise<DocumentOCRActionState> {
-  const parsed = reviewSchema.safeParse({ patientId: formData.get("patientId"), extractionId: formData.get("extractionId"), text: formData.get("reviewedText"), status: formData.get("reviewStatus") });
+  const parsed = reviewSchema.safeParse({
+    patientId: formData.get("patientId"),
+    extractionId: formData.get("extractionId"),
+    rawText: formData.get("reviewedText"),
+    status: formData.get("reviewStatus"),
+    candidates: Object.fromEntries(["documentDate", "patientDetails", "medicineNames", "laboratoryValues", "referenceRanges", "doctorDetails", "relevantFindings"].map((field) => [field, formData.get(`candidate_${field}`) ?? ""])),
+  });
   if (!parsed.success) return { status: "error", message: "Review the text and choose whether it is usable." };
   const access = await writablePatient(parsed.data.patientId);
   if (access.error) return { status: "error", message: access.error };
@@ -62,7 +79,7 @@ export async function reviewDocumentOCR(_previous: DocumentOCRActionState, formD
     return { status: "error", message: "Only a pending extraction can be reviewed. Reload the page and try again." };
   }
   const { data, error } = await access.supabase.from("extracted_document_data")
-    .update({ extracted_fields: { rawText: parsed.data.text, extractionMethod: "on_device_ocr", language: "eng" }, review_status: parsed.data.status, reviewed_by: access.user.id, reviewed_at: new Date().toISOString() })
+    .update({ extracted_fields: { rawText: parsed.data.rawText, candidates: parsed.data.candidates, extractionMethod: "on_device_ocr", language: "eng" }, review_status: parsed.data.status, reviewed_by: access.user.id, reviewed_at: new Date().toISOString() })
     .eq("id", parsed.data.extractionId).eq("patient_id", parsed.data.patientId).eq("review_status", "pending").select("id").maybeSingle();
   if (error || !data) return { status: "error", message: "This extraction could not be reviewed. Check your profile access." };
   revalidatePath(`/account/patients/${parsed.data.patientId}`);

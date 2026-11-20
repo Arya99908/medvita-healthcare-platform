@@ -55,7 +55,7 @@ describe("patient document OCR review actions", () => {
     vi.mocked(createClient).mockResolvedValue(client as never);
     const result = await saveDocumentOCR(initialState, form({ patientId, documentId, recognizedText: "Fictional medicine label text" }));
     expect(result.status).toBe("success");
-    expect(operations).toContainEqual({ table: "extracted_document_data", method: "insert", value: expect.objectContaining({ patient_id: patientId, document_id: documentId, extracted_fields: { rawText: "Fictional medicine label text", extractionMethod: "on_device_ocr", language: "eng" }, review_status: "pending", visibility: "sensitive_adolescent" }) });
+    expect(operations).toContainEqual({ table: "extracted_document_data", method: "insert", value: expect.objectContaining({ patient_id: patientId, document_id: documentId, extracted_fields: expect.objectContaining({ rawText: "Fictional medicine label text", candidates: expect.objectContaining({ medicineNames: "" }), extractionMethod: "on_device_ocr", language: "eng" }), review_status: "pending", visibility: "sensitive_adolescent" }) });
     expect(revalidatePathMock).toHaveBeenCalledWith(`/account/patients/${patientId}`);
   });
 
@@ -70,9 +70,9 @@ describe("patient document OCR review actions", () => {
   it("records review status, reviewer, and corrected text without creating medical records", async () => {
     const { client, operations } = mockClient();
     vi.mocked(createClient).mockResolvedValue(client as never);
-    const result = await reviewDocumentOCR(initialState, form({ patientId, extractionId, reviewedText: "Corrected fictional report text", reviewStatus: "accepted" }));
+    const result = await reviewDocumentOCR(initialState, form({ patientId, extractionId, reviewedText: "Corrected fictional report text", candidate_documentDate: "2026-10-14", candidate_patientDetails: "Fictional Patient", candidate_medicineNames: "Fictional medicine", candidate_laboratoryValues: "Fictional value line", candidate_referenceRanges: "Fictional range", candidate_doctorDetails: "Dr. Fictional Example", candidate_relevantFindings: "Fictional finding", reviewStatus: "accepted" }));
     expect(result.status).toBe("success");
-    expect(operations).toContainEqual({ table: "extracted_document_data", method: "update", value: expect.objectContaining({ review_status: "accepted", reviewed_by: userId, extracted_fields: { rawText: "Corrected fictional report text", extractionMethod: "on_device_ocr", language: "eng" } }) });
+    expect(operations).toContainEqual({ table: "extracted_document_data", method: "update", value: expect.objectContaining({ review_status: "accepted", reviewed_by: userId, extracted_fields: { rawText: "Corrected fictional report text", candidates: { documentDate: "2026-10-14", patientDetails: "Fictional Patient", medicineNames: "Fictional medicine", laboratoryValues: "Fictional value line", referenceRanges: "Fictional range", doctorDetails: "Dr. Fictional Example", relevantFindings: "Fictional finding" }, extractionMethod: "on_device_ocr", language: "eng" } }) });
     expect(client.from).not.toHaveBeenCalledWith("laboratory_results");
     expect(client.from).not.toHaveBeenCalledWith("medication_records");
   });

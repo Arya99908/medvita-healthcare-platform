@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { FileSearch, ScanText, ShieldCheck } from "lucide-react";
 import type { Json } from "@/lib/database.types";
+import { documentOCRFieldDefinitions, parseDocumentOCRCandidates, type DocumentOCRCandidates } from "@/lib/document-ocr-candidates";
 import { reviewDocumentOCR, saveDocumentOCR, type DocumentOCRActionState } from "./document-ocr-actions";
 
 type Extraction = { id: string; extracted_fields: Json; review_status: string; created_at: string };
@@ -15,6 +16,16 @@ function extractedText(fields: Json) {
   if (!fields || typeof fields !== "object" || Array.isArray(fields)) return "";
   const text = (fields as Record<string, Json>).rawText;
   return typeof text === "string" ? text : "";
+}
+
+function extractedCandidates(fields: Json): DocumentOCRCandidates {
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) return parseDocumentOCRCandidates("");
+  const value = (fields as Record<string, Json>).candidates;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const candidates = Object.fromEntries(documentOCRFieldDefinitions.map(({ name }) => [name, value[name]]));
+    if (documentOCRFieldDefinitions.every(({ name }) => typeof candidates[name] === "string")) return candidates as DocumentOCRCandidates;
+  }
+  return parseDocumentOCRCandidates(extractedText(fields));
 }
 
 async function imageCanvas(blob: Blob) {
@@ -172,14 +183,16 @@ export default function DocumentOCR({
 function ReviewedExtraction({ patientId, extraction, canWrite }: { patientId: string; extraction: Extraction; canWrite: boolean }) {
   const [state, action, pending] = useActionState(reviewDocumentOCR, initialState);
   const text = extractedText(extraction.extracted_fields);
+  const candidates = extractedCandidates(extraction.extracted_fields);
   return <details className="document-ocr-history-item"><summary>{extraction.review_status.replaceAll("_", " ")} · {new Date(extraction.created_at).toLocaleDateString()}</summary>
     {extraction.review_status === "pending" && canWrite ? <form action={action} className="account-profile-form timeline-form document-ocr-review-form">
       <input type="hidden" name="patientId" value={patientId} /><input type="hidden" name="extractionId" value={extraction.id} />
       <label htmlFor={`reviewed-ocr-${extraction.id}`}>Check and correct against the original file</label><textarea id={`reviewed-ocr-${extraction.id}`} name="reviewedText" defaultValue={text} maxLength={30_000} rows={10} required />
-      <label htmlFor={`review-status-${extraction.id}`}>Review decision</label><select id={`review-status-${extraction.id}`} name="reviewStatus" defaultValue="accepted"><option value="accepted">Text is usable after my review</option><option value="rejected">Text is unusable</option></select>
-      <p className="timeline-privacy-note">Accepting confirms only that you reviewed the transcription. It does not verify a medical result or add data to the health record.</p>
+      <fieldset className="document-ocr-candidates"><legend>Candidate fields to check</legend><p>Suggestions use visible labels and measurement patterns. They can be wrong or incomplete. Compare each field with the original and edit or clear it.</p>{documentOCRFieldDefinitions.map((field) => <label key={field.name} htmlFor={`ocr-candidate-${field.name}-${extraction.id}`}>{field.label}<textarea id={`ocr-candidate-${field.name}-${extraction.id}`} name={`candidate_${field.name}`} defaultValue={candidates[field.name]} rows={field.name === "laboratoryValues" || field.name === "relevantFindings" ? 4 : 2} maxLength={4_000} /></label>)}</fieldset>
+      <label htmlFor={`review-status-${extraction.id}`}>Review decision</label><select id={`review-status-${extraction.id}`} name="reviewStatus" defaultValue="accepted"><option value="accepted">I checked these fields against the document</option><option value="rejected">The OCR or suggestions are unusable</option></select>
+      <p className="timeline-privacy-note">Accepting confirms only that you checked the transcription and fields. They remain separate from the profile&apos;s verified medical records.</p>
       {state.message && <p className={`account-form-message ${state.status}`} role="status">{state.message}</p>}
-      <button className="primary-button account-submit" type="submit" disabled={pending}>{pending ? "Saving review…" : "Save review"}</button>
-    </form> : <><p className="timeline-privacy-note">{extraction.review_status === "pending" ? "Pending review; this text is unverified." : extraction.review_status === "accepted" ? "Reviewed transcription; medical values remain unverified." : "Rejected transcription; not used in the structured health record."}</p><pre>{text}</pre></>}
+      <button className="primary-button account-submit" type="submit" disabled={pending}>{pending ? "Saving review…" : "Save reviewed fields"}</button>
+    </form> : <><p className="timeline-privacy-note">{extraction.review_status === "pending" ? "Pending review; these are unverified suggestions." : extraction.review_status === "accepted" ? "User-reviewed transcription and fields. They remain separate from the profile's verified medical records." : "Rejected transcription; not used in the structured health record."}</p>{extraction.review_status !== "rejected" && <dl className="document-ocr-field-list">{documentOCRFieldDefinitions.map((field) => <div key={field.name}><dt>{field.label}</dt><dd>{candidates[field.name] || "No candidate found"}</dd></div>)}</dl>}<details><summary>Show OCR text</summary><pre>{text}</pre></details></>}
   </details>;
 }
