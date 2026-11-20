@@ -2051,6 +2051,50 @@ export type Database = {
         }
         Relationships: []
       }
+      senior_care_observations: {
+        Row: {
+          created_at: string
+          created_by: string
+          details: string
+          id: string
+          observation_type: string
+          observed_at: string
+          patient_id: string
+          source: string
+          verification_status: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          details: string
+          id?: string
+          observation_type: string
+          observed_at?: string
+          patient_id: string
+          source: string
+          verification_status?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          details?: string
+          id?: string
+          observation_type?: string
+          observed_at?: string
+          patient_id?: string
+          source?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "senior_care_observations_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sleep_records: {
         Row: {
           created_at: string

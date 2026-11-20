@@ -9,14 +9,16 @@ const props = {
   medications: [{ id: "med-1", medicine_name: "Fictional medicine note", status: "active" }],
   schedules: [{ medication_id: "med-1", frequency: "Twice daily as recorded", administration_times: ["08:00", "20:00"], status: "active" }],
   symptoms: [{ id: "symptom-1", symptom: "Fictional fatigue note", severity: 2, observed_at: "2026-11-19T10:00:00.000Z" }],
+  observations: [{ id: "observation-1", observation_type: "mobility", details: "Walked to the garden with a companion", source: "caregiver", verification_status: "unverified", observed_at: "2026-11-20T09:00:00.000Z" }],
   appointments: [{ id: "appointment-1", title: "Fictional follow-up visit", event_type: "follow_up", status: "scheduled", starts_at: "2026-11-21T10:00:00.000Z" }],
   caregiverCount: 2,
   caregiverRoles: ["caregiver", "nurse"],
   availability: [{ user_id: "caregiver-1", display_name: "Sam", relationship_role: "caregiver", availability_status: "available", note: "Mornings only", updated_at: "2026-11-20T08:00:00.000Z" }],
   ownAvailability: null,
   canSetAvailability: true,
+  canRecordObservations: true,
   alerts: [{ id: "alert-1", alert_type: "fictional_test_action", status: "created", created_at: "2026-11-19T12:00:00.000Z" }],
-  loadErrors: { conditions: false, tasks: false, medications: false, symptoms: false, appointments: false, caregivers: false, alerts: false },
+  loadErrors: { conditions: false, tasks: false, medications: false, symptoms: false, seniorObservations: false, appointments: false, caregivers: false, alerts: false },
 };
 
 describe("senior care overview", () => {
@@ -33,6 +35,10 @@ describe("senior care overview", () => {
     expect(screen.getByText("1 condition note listed as current")).toBeTruthy();
     expect(screen.getByText("Fictional medicine note")).toBeTruthy();
     expect(screen.getByText("Fictional fatigue note")).toBeTruthy();
+    expect(screen.getAllByText("Mobility or walking").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Walked to the garden with a companion")).toBeTruthy();
+    expect(screen.getByText(/Caregiver report · unverified/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save observation" })).toBeTruthy();
     expect(screen.getByText("2 linked care partners")).toBeTruthy();
     expect(screen.queryByText("Fictional check-in task")).not.toBeNull();
     expect(screen.getByText("Fictional follow-up visit")).toBeTruthy();

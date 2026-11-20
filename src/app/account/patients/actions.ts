@@ -321,6 +321,17 @@ const caregiverAvailabilitySchema = z.object({
   note: z.string().trim().max(160, "Keep the note under 160 characters.").optional().default(""),
 });
 
+const seniorObservationSchema = z.object({
+  observationType: z.enum(["mobility", "fall", "activity", "appetite", "hydration"]),
+  details: z.string().trim().min(3, "Add a short observation.").max(1000, "Keep the observation under 1,000 characters."),
+  observedAt: z.string().trim().optional().default("").refine((value) => !value || isValidLocalDateTime(value), "Enter a valid observation date and time."),
+  observedAtOffset: z.coerce.number().int().min(-840).max(840),
+}).superRefine((value, context) => {
+  if (value.observedAt && localDateTimeToUtc(value.observedAt, value.observedAtOffset) > Date.now()) {
+    context.addIssue({ code: "custom", path: ["observedAt"], message: "An observation cannot be dated in the future." });
+  }
+});
+
 const hospitalVisitSchema = z.object({
   visitAt: z.string().trim().min(1, "Choose the visit date and time.").refine(isValidLocalDateTime, "Enter a valid visit date and time."),
   visitAtOffset: z.coerce.number().int().min(-840).max(840),
@@ -711,6 +722,41 @@ export async function setCaregiverAvailability(_previous: CareLogFormState, form
   if (error) return { status: "error", message: "Availability could not be shared. Check your profile access and try again." };
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Availability shared with this profile's authorized care team." };
+}
+
+export async function createSeniorCareObservation(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = seniorObservationSchema.safeParse({
+    observationType: formData.get("observationType"),
+    details: formData.get("details"),
+    observedAt: formData.get("observedAt") ?? "",
+    observedAtOffset: formData.get("observedAtOffset") ?? "0",
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the observation details and try again." };
+
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before adding an observation." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  const allowedRoles = ["patient", "guardian", "caregiver", "family_member", "nurse"];
+  if (profileError || relationshipError || profile?.life_stage !== "senior" || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write || !allowedRoles.includes(relationship.relationship_role)) {
+    return { status: "error", message: "Active write access as the senior patient or a linked care partner is required." };
+  }
+
+  const { error } = await supabase.from("senior_care_observations").insert({
+    patient_id: patientId,
+    observation_type: parsed.data.observationType,
+    details: parsed.data.details,
+    observed_at: parsed.data.observedAt ? new Date(localDateTimeToUtc(parsed.data.observedAt, parsed.data.observedAtOffset)).toISOString() : new Date().toISOString(),
+    source: relationship.relationship_role === "patient" ? "patient" : "caregiver",
+    verification_status: "unverified",
+    created_by: user.id,
+  });
+  if (error) return { status: "error", message: "The observation could not be saved. Check your profile access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Observation saved as an unverified patient or caregiver report." };
 }
 
 export async function createHospitalVisit(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {

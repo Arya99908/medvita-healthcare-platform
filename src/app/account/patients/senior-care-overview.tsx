@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useSyncExternalStore } from "react";
+import { useActionState, useSyncExternalStore, type ChangeEvent } from "react";
 import { Activity, CalendarDays, ClipboardList, HeartPulse, Pill, ShieldCheck, Siren, Users } from "lucide-react";
-import { setCaregiverAvailability, type CareLogFormState } from "./actions";
+import { createSeniorCareObservation, setCaregiverAvailability, type CareLogFormState } from "./actions";
+import VoiceDictation from "@/components/voice-dictation";
 
 type Task = { id: string; title: string; status: string; due_at: string | null };
 type Medication = { id: string; medicine_name: string; status: string };
 type Schedule = { medication_id: string; frequency: string; administration_times: unknown; status: string };
 type Symptom = { id: string; symptom: string; severity: number | null; observed_at: string };
+type SeniorObservation = { id: string; observation_type: string; details: string; source: string; verification_status: string; observed_at: string };
 type Appointment = { id: string; title: string; event_type: string; status: string; starts_at: string };
 type EmergencyAlert = { id: string; alert_type: string; status: string; created_at: string };
 type SharedAvailability = { user_id: string; display_name: string; relationship_role: string; availability_status: string; note: string | null; updated_at: string };
@@ -20,6 +22,7 @@ type Props = {
   medications: Medication[];
   schedules: Schedule[];
   symptoms: Symptom[];
+  observations: SeniorObservation[];
   appointments: Appointment[];
   caregiverCount: number;
   caregiverRoles: string[];
@@ -27,7 +30,7 @@ type Props = {
   ownAvailability: SharedAvailability | null;
   canSetAvailability: boolean;
   alerts: EmergencyAlert[];
-  loadErrors: { conditions: boolean; tasks: boolean; medications: boolean; symptoms: boolean; appointments: boolean; caregivers: boolean; alerts: boolean };
+  loadErrors: { conditions: boolean; tasks: boolean; medications: boolean; symptoms: boolean; seniorObservations: boolean; appointments: boolean; caregivers: boolean; alerts: boolean };
 };
 
 function localDateKey(date: Date) {
@@ -51,11 +54,19 @@ function Section({ icon, title, error, children }: { icon: React.ReactNode; titl
 }
 
 const initialAvailabilityState: CareLogFormState = { status: "idle", message: "" };
+const initialObservationState: CareLogFormState = { status: "idle", message: "" };
 const availabilityLabels: Record<string, string> = { available: "Available", limited: "Limited availability", unavailable: "Unavailable" };
+const observationLabels: Record<string, string> = { mobility: "Mobility or walking", fall: "Fall", activity: "Activity or inactivity", appetite: "Appetite", hydration: "Hydration" };
 
-export default function SeniorCareOverview({ patientId, conditions, tasks, medications, schedules, symptoms, appointments, caregiverCount, caregiverRoles, availability, ownAvailability, canSetAvailability, alerts, loadErrors }: Props) {
+export default function SeniorCareOverview({ patientId, conditions, tasks, medications, schedules, symptoms, observations, appointments, caregiverCount, caregiverRoles, availability, ownAvailability, canSetAvailability, canRecordObservations, alerts, loadErrors }: Props & { canRecordObservations: boolean }) {
   const today = useSyncExternalStore(subscribeToLocalDay, () => localDateKey(new Date()), () => "");
   const [availabilityState, availabilityAction, availabilityPending] = useActionState(setCaregiverAvailability, initialAvailabilityState);
+  const [observationState, observationAction, observationPending] = useActionState(createSeniorCareObservation.bind(null, patientId), initialObservationState);
+
+  function updateObservationTimezoneOffset(event: ChangeEvent<HTMLInputElement>) {
+    const field = event.currentTarget.form?.elements.namedItem("observedAtOffset");
+    if (field instanceof HTMLInputElement) field.value = event.currentTarget.value ? String(new Date(event.currentTarget.value).getTimezoneOffset()) : "0";
+  }
 
   const currentConditions = conditions.filter((condition) => condition.status === "active");
   const currentMedicines = medications.filter((medication) => medication.status === "active");
@@ -88,6 +99,19 @@ export default function SeniorCareOverview({ patientId, conditions, tasks, medic
 
       <Section icon={<Activity size={16} />} title="Recent symptoms" error={loadErrors.symptoms}>
         {symptoms.length ? <ul>{symptoms.slice(0, 4).map((symptom) => <li key={symptom.id}><strong>{symptom.symptom}</strong><span>Reported {localDateTime(symptom.observed_at)}{symptom.severity === null ? " · severity not recorded" : ` · severity ${symptom.severity}/5`}</span></li>)}</ul> : <p>No symptoms have been recorded.</p>}
+      </Section>
+
+      <Section icon={<Activity size={16} />} title="Daily wellbeing observations" error={loadErrors.seniorObservations}>
+        {observations.length ? <ul>{observations.slice(0, 5).map((item) => <li key={item.id}><strong>{observationLabels[item.observation_type] ?? "Care observation"}</strong><span>{item.details}</span><span>{item.source === "patient" ? "Patient report" : "Caregiver report"} · {item.verification_status} · {localDateTime(item.observed_at)}</span></li>)}</ul> : <p>No mobility, fall, activity, appetite, or hydration observations are recorded.</p>}
+        {observations.length > 5 && <details className="senior-observations-history"><summary>See {observations.length - 5} earlier observations</summary><ul>{observations.slice(5).map((item) => <li key={item.id}><strong>{observationLabels[item.observation_type] ?? "Care observation"}</strong><span>{item.details}</span><span>{item.source === "patient" ? "Patient report" : "Caregiver report"} · {item.verification_status} · {localDateTime(item.observed_at)}</span></li>)}</ul></details>}
+        <p className="senior-overview-note">These notes are unverified reports. They do not assess fall risk, nutrition, hydration, or urgency.</p>
+        {canRecordObservations && <details className="senior-availability-form-disclosure"><summary>Add a daily observation</summary><form action={observationAction} className="senior-availability-form">
+          <label htmlFor="senior-observation-type">Observation type</label><select id="senior-observation-type" name="observationType" defaultValue="mobility"><option value="mobility">Mobility or walking</option><option value="fall">Fall</option><option value="activity">Activity or inactivity</option><option value="appetite">Appetite</option><option value="hydration">Hydration</option></select>
+          <label htmlFor="senior-observation-details">What was noticed?</label><textarea id="senior-observation-details" name="details" minLength={3} maxLength={1000} rows={3} required placeholder="Describe what the patient or care partner observed" /><VoiceDictation targetId="senior-observation-details" />
+          <label htmlFor="senior-observation-time">Observed date and time <span>(optional; defaults to now)</span></label><input id="senior-observation-time" name="observedAt" type="datetime-local" onChange={updateObservationTimezoneOffset} /><input type="hidden" name="observedAtOffset" defaultValue="0" />
+          {observationState.message && <p className={`account-form-message ${observationState.status}`} role="status">{observationState.message}</p>}
+          <button className="secondary-button" type="submit" disabled={observationPending}>{observationPending ? "Saving…" : "Save observation"}</button>
+        </form></details>}
       </Section>
 
       <Section icon={<CalendarDays size={16} />} title="Upcoming appointments" error={loadErrors.appointments}>

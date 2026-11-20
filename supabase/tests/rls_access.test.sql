@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(249);
+select extensions.plan(255);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -29,7 +29,8 @@ insert into public.patient_profiles(id,created_by,display_name,life_stage)
 values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','11111111-1111-4111-8111-111111111111','Fictional adolescent A','adolescent'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','Fictional patient B','adult'),
-  ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','22222222-2222-4222-8222-222222222222','Fictional child C','child');
+  ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','22222222-2222-4222-8222-222222222222','Fictional child C','child'),
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','22222222-2222-4222-8222-222222222222','Fictional senior D','senior');
 
 insert into public.medical_documents(id,patient_id,storage_path,document_type,display_name,upload_status,uploaded_by)
 values('f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/general/fictional-report.pdf','test_result','Fictional report','uploaded','22222222-2222-4222-8222-222222222222');
@@ -41,13 +42,20 @@ insert into public.patient_relationships(patient_id,user_id,relationship_role,ca
 values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','11111111-1111-4111-8111-111111111111','patient',true,true,'active','11111111-1111-4111-8111-111111111111'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','patient',true,true,'active','22222222-2222-4222-8222-222222222222'),
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','22222222-2222-4222-8222-222222222222','patient',true,true,'active','22222222-2222-4222-8222-222222222222'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','33333333-3333-4333-8333-333333333333','guardian',true,false,'active','11111111-1111-4111-8111-111111111111'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','33333333-3333-4333-8333-333333333333','caregiver',true,true,'active','22222222-2222-4222-8222-222222222222'),
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','33333333-3333-4333-8333-333333333333','caregiver',true,true,'active','22222222-2222-4222-8222-222222222222'),
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','44444444-4444-4444-8444-444444444444','doctor',true,true,'active','22222222-2222-4222-8222-222222222222'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','44444444-4444-4444-8444-444444444444','doctor',true,true,'active','11111111-1111-4111-8111-111111111111');
 
 insert into public.access_permissions(patient_id,user_id,permission,granted_by)
 values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','44444444-4444-4444-8444-444444444444','read','11111111-1111-4111-8111-111111111111');
+insert into public.access_permissions(patient_id,user_id,permission,granted_by)
+values
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','44444444-4444-4444-8444-444444444444','read','22222222-2222-4222-8222-222222222222'),
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','44444444-4444-4444-8444-444444444444','write','22222222-2222-4222-8222-222222222222');
 
 insert into public.health_events(patient_id,event_type,title,source,visibility,created_by)
 values
@@ -382,6 +390,16 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.lives_ok($$update public.patient_profiles set display_name='Fictional patient B revised' where id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'$$,'patient can edit their own profile details');
 select extensions.is((select count(*) from public.patient_activity_events where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and resource_type='patient_profiles' and resource_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and action='record_updated' and actor_user_id='22222222-2222-4222-8222-222222222222'),1::bigint,'profile edit adds only a privacy-filtered activity event');
+select extensions.lives_ok($$insert into public.senior_care_observations(patient_id,observation_type,details,source,created_by) values('dddddddd-dddd-4ddd-8ddd-dddddddddddd','mobility','Fictional assisted walk','patient','22222222-2222-4222-8222-222222222222')$$,'senior patient can add an unverified daily care observation');
+select extensions.is((select count(*) from public.patient_activity_events where patient_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' and resource_type='senior_care_observations' and action='record_added' and actor_user_id='22222222-2222-4222-8222-222222222222'),1::bigint,'senior observation adds a privacy-filtered activity event');
+select extensions.throws_ok($$insert into public.senior_care_observations(patient_id,observation_type,details,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','appetite','Fictional appetite note','patient','22222222-2222-4222-8222-222222222222')$$,'42501',null,'adult profile cannot receive senior-specific observations');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.lives_ok($$insert into public.senior_care_observations(patient_id,observation_type,details,source,created_by) values('dddddddd-dddd-4ddd-8ddd-dddddddddddd','hydration','Fictional offered water','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked writable caregiver can add an observation to a senior profile');
+select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444',true);
+select extensions.throws_ok($$insert into public.senior_care_observations(patient_id,observation_type,details,source,created_by) values('dddddddd-dddd-4ddd-8ddd-dddddddddddd','fall','Fictional doctor entry','caregiver','44444444-4444-4444-8444-444444444444')$$,'42501',null,'doctor role cannot create patient or caregiver observations');
+select set_config('request.jwt.claim.sub','55555555-5555-4555-8555-555555555555',true);
+select extensions.is((select count(*) from public.senior_care_observations where patient_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),0::bigint,'unlinked account cannot read senior observations');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.lives_ok($$update public.medical_conditions set name='Fictional corrected condition' where id='edededed-eded-4ded-8ded-edededededed'$$,'author can edit their own unverified condition record');
 select extensions.is((select count(*) from public.patient_activity_events where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and resource_type='medical_conditions' and resource_id='edededed-eded-4ded-8ded-edededededed' and action='record_updated' and actor_user_id='22222222-2222-4222-8222-222222222222'),1::bigint,'condition correction remains in the privacy-filtered activity history');
 with changed as (update public.medical_conditions set name='Fictional verified edit' where id='efefefef-efef-4fef-8fef-efefefefefef' returning id)

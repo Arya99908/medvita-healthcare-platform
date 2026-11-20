@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createHospitalAdmission, createHospitalVisit, createLaboratoryResult, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, deleteStructuredHealthRecord, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, setCaregiverAvailability, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, updateStructuredHealthRecord, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createHospitalAdmission, createHospitalVisit, createLaboratoryResult, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSeniorCareObservation, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, deleteStructuredHealthRecord, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, setCaregiverAvailability, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, updateStructuredHealthRecord, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -662,6 +662,55 @@ describe("caregiver availability action", () => {
 
     expect(result.status).toBe("error");
     expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("senior care observation action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "caregiver-user" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  function observationForm(values: Record<string, string> = {}) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries({ observationType: "mobility", details: "Walked to the garden with a companion", observedAt: "2026-11-20T09:15", observedAtOffset: "-330", ...values })) form.set(key, value);
+    return form;
+  }
+
+  it("saves a dated caregiver observation for an active senior relationship", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { life_stage: "senior" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "caregiver", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert });
+
+    const result = await createSeniorCareObservation(patientId, { status: "idle", message: "" }, observationForm());
+
+    expect(result).toEqual({ status: "success", message: "Observation saved as an unverified patient or caregiver report." });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, observation_type: "mobility", details: "Walked to the garden with a companion", source: "caregiver", verification_status: "unverified", created_by: "caregiver-user", observed_at: new Date(Date.UTC(2026, 10, 20, 9, 15) - 330 * 60_000).toISOString() }));
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+  });
+
+  it("requires a senior profile and an allowed writable care role", async () => {
+    const insert = vi.fn();
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { life_stage: "adult" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "doctor", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert });
+
+    const result = await createSeniorCareObservation(patientId, { status: "idle", message: "" }, observationForm());
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/senior patient or a linked care partner/i);
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed observation date and time before accessing Supabase", async () => {
+    const result = await createSeniorCareObservation(patientId, { status: "idle", message: "" }, observationForm({ observedAt: "2026-02-30T28:90" }));
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/valid observation date and time/i);
+    expect(createClient).not.toHaveBeenCalled();
   });
 });
 
