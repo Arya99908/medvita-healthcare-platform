@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(111);
+select extensions.plan(122);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -13,7 +13,13 @@ values
   ('33333333-3333-4333-8333-333333333333','authenticated','authenticated','medvita-rls-guardian@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
   ('44444444-4444-4444-8444-444444444444','authenticated','authenticated','medvita-rls-doctor@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
   ('55555555-5555-4555-8555-555555555555','authenticated','authenticated','medvita-rls-requester@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
-  ('66666666-6666-4666-8666-666666666666','authenticated','authenticated','medvita-invitee@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now());
+  ('66666666-6666-4666-8666-666666666666','authenticated','authenticated','medvita-invitee@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
+  ('77777777-7777-4777-8777-777777777777','authenticated','authenticated','medvita-unverified-doctor@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now());
+
+insert into public.doctors(user_id,display_name,verification_status)
+values
+  ('44444444-4444-4444-8444-444444444444','Fictional verified doctor','verified'),
+  ('77777777-7777-4777-8777-777777777777','Fictional unverified doctor','unverified');
 
 insert into public.patient_profiles(id,created_by,display_name,life_stage)
 values
@@ -33,7 +39,8 @@ values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','44444444-4444-4444-8444-444444444444','doctor',true,true,'active','11111111-1111-4111-8111-111111111111');
 
 insert into public.access_permissions(patient_id,user_id,permission,granted_by)
-values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','44444444-4444-4444-8444-444444444444','read','11111111-1111-4111-8111-111111111111');
+values
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','44444444-4444-4444-8444-444444444444','read','11111111-1111-4111-8111-111111111111');
 
 insert into public.health_events(patient_id,event_type,title,source,visibility,created_by)
 values
@@ -244,6 +251,32 @@ select set_config('request.jwt.claim.sub','',true);
 set local role anon;
 select extensions.throws_ok($$select public.create_patient_profile('Anonymous profile','adult',null,'en',false)$$,'42501',null,'anonymous user cannot create a patient profile');
 select extensions.throws_ok($$select public.export_my_data()$$,'42501',null,'anonymous user cannot export patient data');
+
+reset role;
+insert into public.patient_relationships(patient_id,user_id,relationship_role,can_read,can_write,status,created_by)
+values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','77777777-7777-4777-8777-777777777777','doctor',true,false,'active','22222222-2222-4222-8222-222222222222');
+insert into public.access_permissions(patient_id,user_id,permission,granted_by)
+values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','77777777-7777-4777-8777-777777777777','read','22222222-2222-4222-8222-222222222222');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','77777777-7777-4777-8777-777777777777',true);
+select extensions.is((select count(*) from public.patient_profiles where id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'unverified doctor cannot read a patient profile even with a relationship and read grant');
+reset role;
+delete from public.patient_relationships where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='77777777-7777-4777-8777-777777777777' and relationship_role='doctor';
+delete from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='77777777-7777-4777-8777-777777777777' and permission='read';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.throws_ok($$select * from public.create_patient_invitation('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','medvita-invitee@example.invalid','doctor',false)$$,'42501',null,'patient cannot invite an unverified doctor');
+select set_config('medvita.doctor_invitation_token',(select invitation_token from public.create_patient_invitation('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','medvita-rls-doctor@example.invalid','doctor',false)),true);
+select extensions.is((select count(*) from public.patient_invitations where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and relationship_role='doctor' and not can_write and accepted_at is null),1::bigint,'patient invitation grants only read-only doctor role pending acceptance');
+select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444',true);
+select extensions.lives_ok($$select public.accept_patient_invitation(current_setting('medvita.doctor_invitation_token'))$$,'verified doctor with the invited email can accept patient consent');
+select extensions.is((select count(*) from public.patient_relationships where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and relationship_role='doctor' and status='active' and can_read and not can_write),1::bigint,'accepted doctor relationship is active and read-only');
+select extensions.ok((select expires_at > now()+interval '89 days' and expires_at <= now()+interval '91 days' from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='read' and revoked_at is null),'doctor read permission expires after 90 days');
+select extensions.is((select count(*) from public.patient_profiles where id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),1::bigint,'consented doctor can read the linked patient profile');
+select extensions.throws_ok($$insert into public.health_events(patient_id,event_type,title,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','note','Doctor write denied','clinician','44444444-4444-4444-8444-444444444444')$$,'42501',null,'read-only doctor cannot write patient health events');
+select extensions.lives_ok($$update public.patient_relationships set status='revoked',revoked_at=now() where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and relationship_role='doctor'$$,'doctor can remove their own relationship');
+select extensions.ok((select revoked_at is not null from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='read'),'revoking doctor relationship also revokes patient read consent');
+select extensions.is(medvita_private.has_patient_access('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','read'),false,'doctor cannot read after revoking their relationship');
 
 reset role;
 -- Raise an error if any assertion fails so `supabase db query` returns non-zero.

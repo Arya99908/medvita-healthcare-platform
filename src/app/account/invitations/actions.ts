@@ -9,9 +9,9 @@ export type InvitationActionState = { status: "idle" | "error" | "success"; mess
 const emptyState: InvitationActionState = { status: "idle", message: "" };
 const invitationSchema = z.object({
   email: z.email().trim().max(254),
-  role: z.enum(["caregiver", "family_member"]),
+  role: z.enum(["caregiver", "family_member", "doctor"]),
   canWrite: z.boolean(),
-});
+}).refine((value) => value.role !== "doctor" || !value.canWrite);
 
 export async function createPatientInvitation(patientId: string, _previous: InvitationActionState, formData: FormData): Promise<InvitationActionState> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(patientId)) return { ...emptyState, status: "error", message: "This profile could not be verified." };
@@ -20,16 +20,17 @@ export async function createPatientInvitation(patientId: string, _previous: Invi
 
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) return { ...emptyState, status: "error", message: "Sign in again to invite a caregiver." };
+  if (authError || !user) return { ...emptyState, status: "error", message: "Sign in again to share profile access." };
   const { data, error } = await supabase.rpc("create_patient_invitation", {
     p_patient_id: patientId,
     p_invited_email: parsed.data.email,
     p_relationship_role: parsed.data.role,
     p_can_write: parsed.data.canWrite,
   });
-  if (error || !data?.[0]?.invitation_token) return { ...emptyState, status: "error", message: error?.message?.includes("already exists") ? "An active invitation already exists for this email." : "The invitation could not be created. Check access and try again." };
+  if (error || !data?.[0]?.invitation_token) return { ...emptyState, status: "error", message: error?.message?.includes("already exists") ? "An active invitation already exists for this email." : error?.message?.includes("verified doctor") ? "Doctor invitations require a verified MedVita professional profile." : "The invitation could not be created. Check access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
-  return { status: "success", message: `Invitation link created. It expires ${new Date(data[0].invitation_expires_at).toLocaleString()}. Share it only with ${parsed.data.email}.`, invitationPath: `/account/invitations/accept?token=${encodeURIComponent(data[0].invitation_token)}` };
+  const accessDescription = parsed.data.role === "doctor" ? "read-only access for 90 days" : parsed.data.canWrite ? "read and care-record update access" : "read-only access";
+  return { status: "success", message: `Invitation link created with ${accessDescription}. The link expires ${new Date(data[0].invitation_expires_at).toLocaleString()}. Share it only with ${parsed.data.email}.`, invitationPath: `/account/invitations/accept?token=${encodeURIComponent(data[0].invitation_token)}` };
 }
 
 export async function revokePatientInvitation(patientId: string, _previous: InvitationActionState, formData: FormData): Promise<InvitationActionState> {

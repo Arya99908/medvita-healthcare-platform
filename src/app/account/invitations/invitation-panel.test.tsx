@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import InvitationPanel from "./invitation-panel";
 
@@ -17,5 +17,13 @@ describe("caregiver invitation panel", () => {
     expect(screen.getByText(/works only for the invited, email-confirmed account/i)).toBeTruthy();
     expect(screen.getByText(/caregiver · account ending 2222/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove access" })).toBeTruthy();
+  });
+
+  it("keeps doctor access read-only and explains that it expires", () => {
+    render(<InvitationPanel patientId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" invitations={[]} relationships={[]} loadError={false} />);
+    fireEvent.change(screen.getByLabelText("Relationship"), { target: { value: "doctor" } });
+    expect(screen.getByText(/Only a verified MedVita doctor can accept/i)).toBeTruthy();
+    expect(screen.getByText(/read-only, expires after 90 days/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/Allow them to add and update care records/)).toBeNull();
   });
 });

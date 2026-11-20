@@ -13,8 +13,8 @@ export default async function AcceptInvitationPage({ searchParams }: { searchPar
   const action = acceptPatientInvitation.bind(null, token);
 
   return <main className="account-page invitation-accept-page"><header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><Link href="/account" className="account-back-link">Your account</Link></header>
-    <section className="account-card invitation-accept-card"><div className="account-card-heading"><div><span className="micro-label">CAREGIVER ACCESS</span><h1>Accept an invitation</h1><p>You’re signed in as <strong>{user.email}</strong>.</p></div><span className="account-card-icon"><Users size={18} /></span></div>
-      <p className="invitation-safety-note">Continuing will link your account to a MedVita health profile. You’ll receive read access, and may also be able to add or update care records if the inviter allowed it. The profile owner controls access and can revoke it.</p>
+    <section className="account-card invitation-accept-card"><div className="account-card-heading"><div><span className="micro-label">PROFILE ACCESS</span><h1>Accept an invitation</h1><p>You’re signed in as <strong>{user.email}</strong>.</p></div><span className="account-card-icon"><Users size={18} /></span></div>
+      <p className="invitation-safety-note">Continuing will link your account to a MedVita health profile. Access is limited to the invited role and any consent granted by the profile owner. Doctor access is read-only and expires after 90 days; the profile owner can revoke access sooner.</p>
       <form action={action} className="invitation-accept-form"><label><input type="checkbox" name="confirm" required /> I recognize the person who invited me and want to accept this access.</label><button className="primary-button" type="submit">Accept invitation</button></form>
       <Link href="/account" className="account-record-link">Cancel and return to account</Link>
     </section>

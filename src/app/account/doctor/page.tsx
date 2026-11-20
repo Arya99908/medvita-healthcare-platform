@@ -19,7 +19,9 @@ export default async function DoctorDashboardPage() {
   ]);
   // Patient profile RLS applies the authoritative expiry check in has_patient_access.
   const permissionPatientIds = new Set((permissions ?? []).map((permission) => permission.patient_id));
-  const authorizedPatientIds = [...new Set((relationships ?? []).map((relationship) => relationship.patient_id).filter((id) => permissionPatientIds.has(id)))];
+  const authorizedPatientIds = profile?.verification_status === "verified"
+    ? [...new Set((relationships ?? []).map((relationship) => relationship.patient_id).filter((id) => permissionPatientIds.has(id)))]
+    : [];
   const { data: patients, error: patientsError } = authorizedPatientIds.length
     ? await supabase.from("patient_profiles").select("id,display_name,life_stage").in("id", authorizedPatientIds).order("display_name")
     : { data: [], error: null };
@@ -34,8 +36,9 @@ export default async function DoctorDashboardPage() {
         <section className="account-card care-dashboard-card" aria-labelledby="doctor-patients-title">
           <div className="account-card-heading"><div><span className="micro-label">CONSENTED ACCESS</span><h2 id="doctor-patients-title">Patient profiles</h2><p>Only profiles already linked to your account with read permission appear here.</p></div><span className="account-card-icon"><Users size={18} /></span></div>
           {hasLoadError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Patient list could not be loaded</strong><span>Refresh the page or sign in again. No patient details were shown.</span></div>
-            : patients?.length ? <div className="account-profile-list">{patients.map((patient) => <article className="account-profile-row" key={patient.id}><span className="account-profile-avatar"><Stethoscope size={17} /></span><div className="account-profile-copy"><strong>{patient.display_name}</strong><span>{stageLabels[patient.life_stage] ?? "Patient"}</span></div><Link className="account-record-link" href={`/account/patients/${patient.id}/reports`}>Open read-only report</Link></article>)}</div>
-              : <div className="account-empty-state"><Users size={23} /><strong>No patient profiles are linked</strong><span>Patient or clinic-managed access requests are not available in this prototype. Searching for patient records is disabled.</span></div>}
+            : profile?.verification_status !== "verified" ? <div className="account-empty-state"><ShieldCheck size={23} /><strong>Professional review required</strong><span>Patient records stay hidden until a clinic administrator verifies your profile.</span></div>
+              : patients?.length ? <div className="account-profile-list">{patients.map((patient) => <article className="account-profile-row" key={patient.id}><span className="account-profile-avatar"><Stethoscope size={17} /></span><div className="account-profile-copy"><strong>{patient.display_name}</strong><span>{stageLabels[patient.life_stage] ?? "Patient"}</span></div><Link className="account-record-link" href={`/account/patients/${patient.id}/reports`}>Open read-only report</Link></article>)}</div>
+                : <div className="account-empty-state"><Users size={23} /><strong>No patient profiles are linked</strong><span>Patient or clinic-managed access requests are not available in this prototype. Searching for patient records is disabled.</span></div>}
         </section>
         {profile && <div className="account-status active">Profile status: {profile.verification_status.replaceAll("_", " ")}</div>}
       </div>
