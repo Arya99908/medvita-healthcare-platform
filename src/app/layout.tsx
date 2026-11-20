@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { DisplayPreferencesControl, DisplayPreferencesProvider } from "@/components/display-preferences";
 
 export const metadata: Metadata = {
   title: "MedVita — Your Health. Your Life.",
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><DisplayPreferencesProvider><DisplayPreferencesControl />{children}</DisplayPreferencesProvider></body>
     </html>
   );
 }

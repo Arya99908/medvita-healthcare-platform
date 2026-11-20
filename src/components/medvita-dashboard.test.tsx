@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnchorHTMLAttributes } from "react";
 import MedVitaDashboard from "./medvita-dashboard";
+import { DisplayPreferencesControl, DisplayPreferencesProvider } from "./display-preferences";
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => <a href={href} {...props}>{children}</a>,
@@ -12,9 +13,13 @@ describe("MedVita fictional demo", () => {
   beforeEach(() => window.localStorage.clear());
   afterEach(() => cleanup());
 
+  function renderDashboard() {
+    return render(<DisplayPreferencesProvider><DisplayPreferencesControl /><MedVitaDashboard /></DisplayPreferencesProvider>);
+  }
+
   it("switches among life-stage profiles with the stage tabs", async () => {
     const user = userEvent.setup();
-    render(<MedVitaDashboard />);
+    renderDashboard();
 
     expect(screen.getByRole("heading", { name: "Aarav Sharma" })).toBeTruthy();
     await user.click(screen.getByRole("tab", { name: "Teen girl" }));
@@ -28,7 +33,7 @@ describe("MedVita fictional demo", () => {
 
   it("saves notes locally and shows them in the selected profile timeline", async () => {
     const user = userEvent.setup();
-    render(<MedVitaDashboard />);
+    renderDashboard();
 
     await user.click(screen.getByRole("button", { name: "Add a health note" }));
     await user.type(screen.getByLabelText("What would you like to remember?"), "Sample note for the pitch");
@@ -41,7 +46,7 @@ describe("MedVita fictional demo", () => {
 
   it("marks fictional medicine reminders without claiming a real dose", async () => {
     const user = userEvent.setup();
-    render(<MedVitaDashboard />);
+    renderDashboard();
 
     await user.click(screen.getByRole("tab", { name: "Adult" }));
     await user.click(screen.getByRole("button", { name: "Medicines" }));
@@ -53,7 +58,7 @@ describe("MedVita fictional demo", () => {
 
   it("supports keyboard stage navigation and text-size controls", async () => {
     const user = userEvent.setup();
-    const { container } = render(<MedVitaDashboard />);
+    const { container } = renderDashboard();
     const stageTabs = screen.getByRole("tablist", { name: "Choose fictional life-stage profile" });
 
     fireEvent.keyDown(stageTabs, { key: "ArrowRight" });
@@ -63,9 +68,23 @@ describe("MedVita fictional demo", () => {
     expect(container.querySelector(".stage-tab.active")?.textContent).toContain("Teen girl");
   });
 
+  it("keeps display settings across page visits", async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderDashboard();
+    await user.click(screen.getByRole("button", { name: "Increase text size" }));
+    await user.click(screen.getByRole("button", { name: "High contrast Off" }));
+    await waitFor(() => expect(JSON.parse(window.localStorage.getItem("medvita-display-preferences") ?? "{}")).toEqual({ fontScale: 1.08, highContrast: true }));
+    unmount();
+
+    renderDashboard();
+    await waitFor(() => expect(screen.getByText("108%")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "High contrast On" }).getAttribute("aria-pressed")).toBe("true");
+    expect(document.documentElement.classList.contains("medvita-high-contrast")).toBe(true);
+  });
+
   it("saves age-appropriate care logs as synthetic local demo data", async () => {
     const user = userEvent.setup();
-    render(<MedVitaDashboard />);
+    renderDashboard();
 
     await user.click(screen.getByRole("tab", { name: "Infant" }));
     await user.click(screen.getByRole("button", { name: "Wellness" }));
@@ -81,7 +100,7 @@ describe("MedVita fictional demo", () => {
 
   it("shows user-initiated emergency dialer choices without claiming dispatch", async () => {
     const user = userEvent.setup();
-    render(<MedVitaDashboard />);
+    renderDashboard();
 
     await user.click(screen.getByRole("button", { name: "Open emergency options" }));
     expect(screen.getByRole("heading", { name: "Need urgent help?" })).toBeTruthy();

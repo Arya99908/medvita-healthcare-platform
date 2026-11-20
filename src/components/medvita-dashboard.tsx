@@ -2,7 +2,7 @@
 
 import {
   Activity, ArrowRight, Baby, Bell, CalendarDays,
-  Check, ChevronDown, ClipboardList, Contrast, FileText, Heart, Home,
+  Check, ChevronDown, ClipboardList, FileText, Heart, Home,
   Menu, MessageCircle, Plus, Search, Shield, Sparkles, Users, X, Pill, PhoneCall,
   Leaf, Download, RotateCcw,
 } from "lucide-react";
@@ -13,6 +13,7 @@ import { AppSection, DemoEvent, DemoProfile, demoProfiles, navigationItems } fro
 import DailyCareLog from "@/components/daily-care-log";
 import EmergencySection from "@/components/emergency-section";
 import DemoAISummary from "@/components/demo-ai-summary";
+import { useDisplayPreferences } from "@/components/display-preferences";
 
 type SavedNote = { id: string; profileId: DemoProfile["id"]; message: string; createdAt: string };
 type Toast = { id: number; message: string } | null;
@@ -70,8 +71,7 @@ function TrendLine() {
 export default function MedVitaDashboard() {
   const [profileIndex, setProfileIndex] = useState(1);
   const [activeSection, setActiveSection] = useState<AppSection>("overview");
-  const [fontScale, setFontScale] = useState(1);
-  const [highContrast, setHighContrast] = useState(false);
+  const { highContrast } = useDisplayPreferences();
   const [autoPlay, setAutoPlay] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [modal, setModal] = useState(false);
@@ -93,10 +93,6 @@ export default function MedVitaDashboard() {
     const timer = window.setInterval(() => setProfileIndex((index) => (index + 1) % demoProfiles.length), 5200);
     return () => window.clearInterval(timer);
   }, [autoPlay]);
-
-  useEffect(() => {
-    document.documentElement.style.setProperty("--font-scale", String(fontScale));
-  }, [fontScale]);
 
   useEffect(() => {
     if (!toast) return;
@@ -154,11 +150,6 @@ export default function MedVitaDashboard() {
         <a className="brand" href="#main" aria-label="MedVita home"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></a>
         <div className="topbar-center"><span className="topbar-context">FAMILY HEALTH SPACE</span><span className="topbar-separator">/</span><span className="topbar-context current-context">DEMO OVERVIEW</span></div>
         <div className="topbar-actions">
-          <div className="access-tools" aria-label="Accessibility options">
-            <button className="icon-button text-control" type="button" aria-label="Decrease text size" onClick={() => setFontScale((v) => Math.max(.92, Number((v - .08).toFixed(2))))}>A−</button>
-            <button className="icon-button text-control" type="button" aria-label="Increase text size" onClick={() => setFontScale((v) => Math.min(1.28, Number((v + .08).toFixed(2))))}>A+</button>
-            <button className="icon-button contrast-control" type="button" aria-pressed={highContrast} onClick={() => setHighContrast((v) => !v)} aria-label="Toggle high contrast"><Contrast size={17} /><span>Contrast</span></button>
-          </div>
           <span className="topbar-divider" />
           <button className="emergency-shortcut" type="button" onClick={() => setSection("emergency")} aria-label="Open emergency options"><PhoneCall size={16} /><span>Emergency</span></button>
           <Link className="user-chip" href="/account" aria-label="Open your account"><div className="user-avatar"><Users size={16} aria-hidden="true" /></div><span>My account</span><ChevronDown size={14} aria-hidden="true" /></Link>
