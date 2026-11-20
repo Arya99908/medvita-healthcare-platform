@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { useActionState, useSyncExternalStore } from "react";
 import { Activity, CalendarDays, ClipboardList, HeartPulse, Pill, ShieldCheck, Siren, Users } from "lucide-react";
+import { setCaregiverAvailability, type CareLogFormState } from "./actions";
 
 type Task = { id: string; title: string; status: string; due_at: string | null };
 type Medication = { id: string; medicine_name: string; status: string };
@@ -10,6 +11,7 @@ type Schedule = { medication_id: string; frequency: string; administration_times
 type Symptom = { id: string; symptom: string; severity: number | null; observed_at: string };
 type Appointment = { id: string; title: string; event_type: string; status: string; starts_at: string };
 type EmergencyAlert = { id: string; alert_type: string; status: string; created_at: string };
+type SharedAvailability = { user_id: string; display_name: string; relationship_role: string; availability_status: string; note: string | null; updated_at: string };
 
 type Props = {
   patientId: string;
@@ -21,6 +23,9 @@ type Props = {
   appointments: Appointment[];
   caregiverCount: number;
   caregiverRoles: string[];
+  availability: SharedAvailability[];
+  ownAvailability: SharedAvailability | null;
+  canSetAvailability: boolean;
   alerts: EmergencyAlert[];
   loadErrors: { conditions: boolean; tasks: boolean; medications: boolean; symptoms: boolean; appointments: boolean; caregivers: boolean; alerts: boolean };
 };
@@ -45,8 +50,12 @@ function Section({ icon, title, error, children }: { icon: React.ReactNode; titl
   </section>;
 }
 
-export default function SeniorCareOverview({ patientId, conditions, tasks, medications, schedules, symptoms, appointments, caregiverCount, caregiverRoles, alerts, loadErrors }: Props) {
+const initialAvailabilityState: CareLogFormState = { status: "idle", message: "" };
+const availabilityLabels: Record<string, string> = { available: "Available", limited: "Limited availability", unavailable: "Unavailable" };
+
+export default function SeniorCareOverview({ patientId, conditions, tasks, medications, schedules, symptoms, appointments, caregiverCount, caregiverRoles, availability, ownAvailability, canSetAvailability, alerts, loadErrors }: Props) {
   const today = useSyncExternalStore(subscribeToLocalDay, () => localDateKey(new Date()), () => "");
+  const [availabilityState, availabilityAction, availabilityPending] = useActionState(setCaregiverAvailability, initialAvailabilityState);
 
   const currentConditions = conditions.filter((condition) => condition.status === "active");
   const currentMedicines = medications.filter((medication) => medication.status === "active");
@@ -88,7 +97,16 @@ export default function SeniorCareOverview({ patientId, conditions, tasks, medic
 
       <Section icon={<Users size={16} />} title="Care team" error={loadErrors.caregivers}>
         {caregiverCount ? <><p>{caregiverCount} linked care {caregiverCount === 1 ? "partner" : "partners"}</p><p>{[...new Set(caregiverRoles)].map((role) => role.replaceAll("_", " ")).join(", ")}</p></> : <p>No linked caregiver or family access is recorded.</p>}
-        <p className="senior-overview-note">Availability is not currently collected in this profile.</p>
+        {availability.length ? <ul>{availability.map((item) => <li key={item.user_id}><strong>{item.display_name} · {item.relationship_role.replaceAll("_", " ")}</strong><span>{availabilityLabels[item.availability_status] ?? "Availability status"} · updated {localDateTime(item.updated_at)}</span>{item.note && <span>{item.note}</span>}</li>)}</ul> : <p>No care partners have shared an availability status.</p>}
+        <p className="senior-overview-note">Availability is self-reported and may change. Confirm directly; it is not emergency dispatch.</p>
+        {canSetAvailability && <details className="senior-availability-form-disclosure"><summary>{ownAvailability ? "Update your availability" : "Share your availability"}</summary><form action={availabilityAction} className="senior-availability-form">
+          <input type="hidden" name="patientId" value={patientId} />
+          <label htmlFor="senior-availability-display-name">Name to share with the care team</label><input id="senior-availability-display-name" name="displayName" defaultValue={ownAvailability?.display_name ?? ""} required minLength={2} maxLength={80} />
+          <label htmlFor="senior-availability-status">Availability</label><select id="senior-availability-status" name="availabilityStatus" defaultValue={ownAvailability?.availability_status ?? "available"}><option value="available">Available</option><option value="limited">Limited availability</option><option value="unavailable">Unavailable</option></select>
+          <label htmlFor="senior-availability-note">Short note <span>(optional)</span></label><input id="senior-availability-note" name="note" defaultValue={ownAvailability?.note ?? ""} maxLength={160} placeholder="For example, mornings only" />
+          {availabilityState.message && <p className={`account-form-message ${availabilityState.status}`} role="status">{availabilityState.message}</p>}
+          <button className="secondary-button" type="submit" disabled={availabilityPending}>{availabilityPending ? "Saving…" : "Share availability"}</button>
+        </form></details>}
       </Section>
 
       <Section icon={<ShieldCheck size={16} />} title="Recent emergency log" error={loadErrors.alerts}>

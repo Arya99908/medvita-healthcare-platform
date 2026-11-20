@@ -314,6 +314,13 @@ const milestoneSchema = z.object({
   if (value.status === "follow_up" && !value.followUpOn) context.addIssue({ code: "custom", path: ["followUpOn"], message: "Add a follow-up date for this observation." });
 });
 
+const caregiverAvailabilitySchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  displayName: z.string().trim().min(2, "Enter a name to share with the care team.").max(80).refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Remove control characters from the name."),
+  availabilityStatus: z.enum(["available", "limited", "unavailable"]),
+  note: z.string().trim().max(160, "Keep the note under 160 characters.").optional().default(""),
+});
+
 const structuredRecordBase = z.object({
   patientId: z.string().uuid("Choose a valid profile."),
   recordId: z.string().uuid("Choose a valid record."),
@@ -639,6 +646,36 @@ export async function updateCaregiverTaskStatus(patientId: string, _previous: Ca
   if (error || !data) return { status: "error", message: parsed.data.status === "missed" ? "Only an open task whose due time has passed can be marked missed." : "This care task could not be updated. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: parsed.data.status === "complete" ? "Care task marked complete." : parsed.data.status === "missed" ? "Care task marked missed." : "Care task reopened." };
+}
+
+export async function setCaregiverAvailability(_previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = caregiverAvailabilitySchema.safeParse({
+    patientId: formData.get("patientId"),
+    displayName: formData.get("displayName"),
+    availabilityStatus: formData.get("availabilityStatus"),
+    note: formData.get("note") ?? "",
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the availability details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before sharing availability." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships")
+    .select("relationship_role,status,can_read,can_write")
+    .eq("patient_id", parsed.data.patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write || !["caregiver", "family_member", "nurse"].includes(relationship.relationship_role)) {
+    return { status: "error", message: "Active write access as a caregiver, family member, or nurse is required to share availability." };
+  }
+  const { error } = await supabase.from("caregiver_availability").upsert({
+    patient_id: parsed.data.patientId,
+    user_id: user.id,
+    display_name: parsed.data.displayName,
+    availability_status: parsed.data.availabilityStatus,
+    note: parsed.data.note || null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "patient_id,user_id" });
+  if (error) return { status: "error", message: "Availability could not be shared. Check your profile access and try again." };
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  return { status: "success", message: "Availability shared with this profile's authorized care team." };
 }
 
 export async function createMenstrualRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {

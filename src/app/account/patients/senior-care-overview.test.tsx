@@ -12,6 +12,9 @@ const props = {
   appointments: [{ id: "appointment-1", title: "Fictional follow-up visit", event_type: "follow_up", status: "scheduled", starts_at: "2026-11-21T10:00:00.000Z" }],
   caregiverCount: 2,
   caregiverRoles: ["caregiver", "nurse"],
+  availability: [{ user_id: "caregiver-1", display_name: "Sam", relationship_role: "caregiver", availability_status: "available", note: "Mornings only", updated_at: "2026-11-20T08:00:00.000Z" }],
+  ownAvailability: null,
+  canSetAvailability: true,
   alerts: [{ id: "alert-1", alert_type: "fictional_test_action", status: "created", created_at: "2026-11-19T12:00:00.000Z" }],
   loadErrors: { conditions: false, tasks: false, medications: false, symptoms: false, appointments: false, caregivers: false, alerts: false },
 };
@@ -33,7 +36,9 @@ describe("senior care overview", () => {
     expect(screen.getByText("2 linked care partners")).toBeTruthy();
     expect(screen.queryByText("Fictional check-in task")).not.toBeNull();
     expect(screen.getByText("Fictional follow-up visit")).toBeTruthy();
-    expect(screen.getByText(/availability is not currently collected/i)).toBeTruthy();
+    expect(screen.getByText(/availability is self-reported/i)).toBeTruthy();
+    expect(screen.getByText("Sam · caregiver")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Share availability" })).toBeTruthy();
     expect(screen.getByRole("link", { name: /emergency access/i }).getAttribute("href")).toBe(`/account/patients/${props.patientId}#patient-emergency-title`);
   });
 

@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(227);
+select extensions.plan(234);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -240,6 +240,17 @@ select extensions.lives_ok($$insert into public.wellness_plans(id,patient_id,tit
 select extensions.lives_ok($$insert into public.wellness_records(id,patient_id,plan_id,record_type,value,created_by,visibility) values('13131313-1313-4131-8131-131313131313','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','12121212-1212-4121-8121-121212121212','exercise','{"minutes":15}'::jsonb,'22222222-2222-4222-8222-222222222222','general')$$,'patient can log a wellness entry linked to their own goal');
 select extensions.is((select count(*) from public.wellness_records where id='13131313-1313-4131-8131-131313131313'),1::bigint,'patient can read their saved wellness entry');
 select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,due_at,assigned_to,created_by) values('99999999-9999-4999-8999-999999999999','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional authorized care task','2026-12-21 00:00:00+00','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can add an own-profile care task');
+select extensions.throws_ok($$insert into public.caregiver_availability(patient_id,user_id,display_name,availability_status) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','Fictional patient','available')$$,'42501',null,'patient role cannot publish caregiver availability');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.lives_ok($$insert into public.caregiver_availability(patient_id,user_id,display_name,availability_status,note) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','33333333-3333-4333-8333-333333333333','Fictional caregiver','available','Mornings only')$$,'active writable caregiver can share their own availability');
+select extensions.lives_ok($$update public.caregiver_availability set availability_status='limited' where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='33333333-3333-4333-8333-333333333333'$$,'caregiver can update their own shared status');
+select extensions.throws_ok($$update public.caregiver_availability set user_id='22222222-2222-4222-8222-222222222222' where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='33333333-3333-4333-8333-333333333333'$$,'42501',null,'caregiver cannot transfer an availability record to another user');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.is((select count(*) from public.caregiver_availability where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='33333333-3333-4333-8333-333333333333'),1::bigint,'patient can read availability shared by their care team');
+select extensions.is(jsonb_array_length(public.export_my_data() #> '{tables,caregiver_availability}'),1,'account export includes RLS-visible caregiver availability');
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select extensions.is((select count(*) from public.caregiver_availability where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'unrelated account cannot read another profile caregiver availability');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional unauthorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot add a care task to another patient profile');
 select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,due_at,assigned_to,created_by) values('abababab-abab-4bab-8bab-abababababab','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task assigned to caregiver','2026-11-19 00:00:00+00','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222')$$,'patient can assign a task to an active writable caregiver');
 select extensions.is((select count(*) from public.notifications where user_id='33333333-3333-4333-8333-333333333333' and patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'task creator cannot read a notification addressed to another account');

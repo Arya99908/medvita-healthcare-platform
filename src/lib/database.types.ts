@@ -508,6 +508,44 @@ export type Database = {
           },
         ]
       }
+      caregiver_availability: {
+        Row: {
+          availability_status: string
+          display_name: string
+          id: string
+          note: string | null
+          patient_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          availability_status: string
+          display_name: string
+          id?: string
+          note?: string | null
+          patient_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          availability_status?: string
+          display_name?: string
+          id?: string
+          note?: string | null
+          patient_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "caregiver_availability_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       caregiver_tasks: {
         Row: {
           assigned_to: string | null

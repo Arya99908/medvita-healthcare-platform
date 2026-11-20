@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, deleteStructuredHealthRecord, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, updateStructuredHealthRecord, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, deleteStructuredHealthRecord, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, setCaregiverAvailability, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, updateStructuredHealthRecord, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -624,6 +624,44 @@ describe("private adolescent cycle journal action", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/on or after the start date/i);
     expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("caregiver availability action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "caregiver-user" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  function availabilityForm(values: Record<string, string> = {}) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries({ patientId, displayName: "Sam Caregiver", availabilityStatus: "available", note: "Mornings only", ...values })) form.set(key, value);
+    return form;
+  }
+
+  it("shares a caregiver-owned status only after checking active writable caregiver access", async () => {
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const relationshipQuery = query({ data: { relationship_role: "caregiver", status: "active", can_read: true, can_write: true }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationshipQuery : { upsert });
+
+    const result = await setCaregiverAvailability({ status: "idle", message: "" }, availabilityForm());
+
+    expect(result).toEqual({ status: "success", message: "Availability shared with this profile's authorized care team." });
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, user_id: "caregiver-user", availability_status: "available", note: "Mornings only" }), { onConflict: "patient_id,user_id" });
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+  });
+
+  it("rejects availability sharing from a read-only guardian", async () => {
+    const upsert = vi.fn();
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: false }, error: null })
+      : { upsert });
+
+    const result = await setCaregiverAvailability({ status: "idle", message: "" }, availabilityForm());
+
+    expect(result.status).toBe("error");
+    expect(upsert).not.toHaveBeenCalled();
   });
 });
 
