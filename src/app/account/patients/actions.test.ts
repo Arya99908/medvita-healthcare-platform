@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -71,6 +71,12 @@ function growthForm(values: Record<string, string> = {}) {
 function vitalForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ vitalType: "blood_pressure_systolic", value: "122", ...values })) form.set(key, value);
+  return form;
+}
+
+function conditionForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ name: "Hypertension", status: "active", diagnosedOn: "2020-01-02", notes: "Fictional sample", ...values })) form.set(key, value);
   return form;
 }
 
@@ -347,6 +353,42 @@ describe("adult and senior vital server action", () => {
     const result = await createVitalRecord(patientId, { status: "idle", message: "" }, vitalForm({ vitalType: "blood_pressure_systolic" }));
     expect(result.status).toBe("error");
     expect(insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("adult and senior condition server action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { relationship_role: "patient", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert: vi.fn().mockResolvedValue({ error: null }) });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("stores a patient-reported condition as unverified", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "senior" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "patient", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createMedicalCondition(patientId, { status: "idle", message: "" }, conditionForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, name: "Hypertension", status: "active", diagnosed_on: "2020-01-02", notes: "Fictional sample", reported_by: "patient", verification_status: "unverified", created_by: "user-1" }));
+  });
+
+  it("rejects child profiles and invalid dates", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const denied = await createMedicalCondition(patientId, { status: "idle", message: "" }, conditionForm());
+    expect(denied.status).toBe("error");
+    expect(insert).not.toHaveBeenCalled();
+    const invalid = await createMedicalCondition(patientId, { status: "idle", message: "" }, conditionForm({ diagnosedOn: "2026-02-30" }));
+    expect(invalid.status).toBe("error");
+    expect(invalid.message).toMatch(/valid diagnosis date/i);
   });
 });
 

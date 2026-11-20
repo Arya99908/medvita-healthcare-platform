@@ -11,6 +11,7 @@ import DocumentForm from "../document-form";
 import SymptomForm from "../symptom-form";
 import ChildCareForms from "../child-care-forms";
 import VitalForm from "../vital-form";
+import ConditionForm from "../condition-form";
 import MenstrualJournalForm from "../menstrual-journal-form";
 import LocalDateTime from "@/components/local-date-time";
 
@@ -54,6 +55,9 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   const { data: vitals, error: vitalsError } = canRead && (isAdultStage || isChildStage)
     ? await supabase.from("vitals").select("id,vital_type,value,unit,source,verification_status,measured_at").eq("patient_id", patientId).order("measured_at", { ascending: false }).limit(100)
     : { data: [], error: null };
+  const { data: medicalConditions, error: medicalConditionsError } = canRead && isAdultStage
+    ? await supabase.from("medical_conditions").select("id,name,status,reported_by,verification_status,diagnosed_on,notes,created_at").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(100)
+    : { data: [], error: null };
   const { data: menstrualRecords, error: menstrualRecordsError } = canRead && isAdolescentStage
     ? await supabase.from("menstrual_records").select("id,period_start,period_end,flow_note,symptom_note,created_at").eq("patient_id", patientId).order("period_start", { ascending: false }).limit(50)
     : { data: [], error: null };
@@ -80,6 +84,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       {canWrite && <SymptomForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && isChildStage && <ChildCareForms patientId={patientId} vaccinationDocuments={(documents ?? []).filter((document) => document.document_type === "vaccination_certificate").map(({ id, display_name }) => ({ id, display_name }))} />}
       {canWrite && (isAdultStage || isChildStage) && <VitalForm patientId={patientId} lifeStage={profile.life_stage} />}
+      {canWrite && isAdultStage && <ConditionForm patientId={patientId} />}
       {canWrite && isAdolescentStage && relationship.relationship_role === "patient" && <MenstrualJournalForm patientId={patientId} />}
       {canWrite && <AppointmentForm patientId={patientId} />}
       {canWrite && <MedicationForm patientId={patientId} lifeStage={profile.life_stage} />}
@@ -104,6 +109,11 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
         {vitalsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Readings could not be loaded</strong><span>Reload the page or sign in again.</span></div>
           : vitals?.length ? <div className="timeline-event-list">{vitals.map((record) => <article key={record.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{record.vital_type.replaceAll("_", " ")} · {record.source} report · {record.verification_status}</span><LocalDateTime value={record.measured_at} /></div><h3>{record.value} {record.unit}</h3></article>)}</div>
             : <div className="account-empty-state"><Activity size={22} /><strong>No readings saved</strong><span>Measurements saved to this profile will appear here as unverified entries.</span></div>}
+      </section>}
+      {canRead && isAdultStage && <section className="account-card" aria-labelledby="conditions-title"><div className="account-card-heading"><div><span className="micro-label">CONDITION NOTES</span><h2 id="conditions-title">Health conditions</h2><p>Patient or caregiver reports, shown with their verification status.</p></div><span className="account-card-icon"><Heart size={18} /></span></div>
+        {medicalConditionsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Condition notes could not be loaded</strong><span>Reload the page or sign in again.</span></div>
+          : medicalConditions?.length ? <div className="timeline-event-list">{medicalConditions.map((condition) => <article key={condition.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{condition.status.replaceAll("_", " ")} · {condition.reported_by} report · {condition.verification_status}</span>{condition.diagnosed_on && <span className="timeline-verification">Date noted: {condition.diagnosed_on}</span>}</div><h3>{condition.name}</h3>{condition.notes && <p>{condition.notes}</p>}</article>)}</div>
+            : <div className="account-empty-state"><Heart size={22} /><strong>No condition notes saved</strong><span>Patient or caregiver reports will appear here when this profile has active read access.</span></div>}
       </section>}
       {canRead && isChildStage && <section className="account-card" aria-labelledby="child-care-title"><div className="account-card-heading"><div><span className="micro-label">CHILD CARE LOGS</span><h2 id="child-care-title">Feeding and bowel notes</h2><p>Caregiver or patient entries are unverified and do not provide clinical guidance.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></div>
         {feedingsError || bowelRecordsError || vomitingRecordsError || growthRecordsError || urinationRecordsError || sleepRecordsError || vaccinationsError || milestonesError || vitalsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Care logs could not be loaded</strong><span>Reload the page or sign in again.</span></div> : <>

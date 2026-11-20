@@ -152,6 +152,14 @@ const vitalSchema = z.object({
   if (input.value < range.min || input.value > range.max) context.addIssue({ code: "custom", path: ["value"], message: `Enter a value from ${range.min} to ${range.max} ${range.unit}.` });
 });
 
+const medicalConditionSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  name: z.string().trim().min(2, "Enter the condition name.").max(100, "Keep the name under 100 characters."),
+  status: z.enum(["active", "resolved", "historical"]),
+  diagnosedOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid diagnosis date."),
+  notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
+});
+
 const menstrualSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   periodStart: z.string().trim().refine(isValidDateOnly, "Enter a valid start date."),
@@ -401,6 +409,24 @@ export async function createVitalRecord(patientId: string, _previous: CareLogFor
   if (error) return { status: "error", message: "The reading could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Reading saved as an unverified report." };
+}
+
+export async function createMedicalCondition(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = medicalConditionSchema.safeParse({ patientId, name: formData.get("name"), status: formData.get("status"), diagnosedOn: formData.get("diagnosedOn") ?? "", notes: formData.get("notes") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the condition details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving a condition." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["adult", "senior"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an adult or senior profile is required." };
+  const reportedBy = relationship.relationship_role === "patient" ? "patient" : relationship.relationship_role === "doctor" ? "clinician" : "caregiver";
+  const { error } = await supabase.from("medical_conditions").insert({ patient_id: patientId, name: parsed.data.name, status: parsed.data.status, diagnosed_on: parsed.data.diagnosedOn || null, notes: parsed.data.notes || null, reported_by: reportedBy, verification_status: "unverified", created_by: user.id });
+  if (error) return { status: "error", message: "The condition note could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Condition saved as an unverified report." };
 }
 
 export async function createMenstrualRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
