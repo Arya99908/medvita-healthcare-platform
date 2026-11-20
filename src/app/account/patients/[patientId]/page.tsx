@@ -20,6 +20,7 @@ import ConditionForm from "../condition-form";
 import { CareTaskForm, CareTaskStatusForm } from "../care-task-form";
 import MenstrualJournalForm from "../menstrual-journal-form";
 import LocalDateTime from "@/components/local-date-time";
+import PatientAISummary from "../patient-ai-summary";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
 
@@ -39,6 +40,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
 
   const canRead = relationship?.status === "active" && relationship.can_read;
   const canWrite = canRead && relationship.can_write;
+  const canGenerateAISummary = Boolean(canWrite && relationship?.relationship_role === "patient");
   const { data: events, error: eventsError } = canRead
     ? await supabase.from("health_events").select("id,event_type,title,description,occurred_at,verification_status,visibility").eq("patient_id", patientId).order("occurred_at", { ascending: false })
     : { data: [], error: null };
@@ -112,12 +114,24 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     const { data } = await supabase.storage.from("medical-documents").createSignedUrl(document.storage_path, 300, { download: document.display_name });
     return { ...document, downloadUrl: data?.signedUrl ?? null };
   }));
+  const { data: aiReports, error: aiReportsError } = canRead
+    ? await supabase.from("ai_reports").select("id,created_at,date_range_start,date_range_end,report_json,review_status").eq("patient_id", patientId).eq("report_type", "patient_history_summary").eq("visibility", "general").order("created_at", { ascending: false }).limit(5)
+    : { data: [], error: null };
+  const aiReportIds = (aiReports ?? []).map((report) => report.id);
+  const { data: aiSources, error: aiSourcesError } = aiReportIds.length > 0
+    ? await supabase.from("ai_analysis_sources").select("id,report_id,source_label,source_date").in("report_id", aiReportIds).eq("visibility", "general").order("source_date", { ascending: true }).limit(200)
+    : { data: [], error: null };
+  const aiReportsWithSources = (aiReports ?? []).map((report) => ({
+    ...report,
+    sources: (aiSources ?? []).filter((source) => source.report_id === report.id),
+  }));
 
   return <main className="account-page">
     <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Your profiles</Link><Link href="/account/care" className="account-back-link"><ClipboardList size={15} /> Care tasks</Link><Link href="/account/notifications" className="account-back-link"><Bell size={15} /> Notifications</Link><Link href="/account/calendar" className="account-back-link"><CalendarDays size={15} /> Calendar</Link><Link href="/" className="account-back-link">Presentation demo</Link></div></header>
     <div className="patient-timeline-layout">
       <div className="account-welcome"><span className="micro-label">{stageLabels[profile.life_stage] ?? "PATIENT"} TIMELINE</span><h1>{profile.display_name}</h1><p>Personal entries for this profile, subject to its current access permissions.</p>{canRead && <Link className="account-record-link" href={`/account/patients/${patientId}/reports`}><ChartNoAxesCombined size={15} /> Health reports</Link>}</div>
       <div className="account-safety-note"><ShieldCheck size={17} /><span>Use fictional data only. Entries are unverified personal notes, not diagnoses, prescriptions, or medical advice.</span></div>
+      {canRead && <PatientAISummary patientId={patientId} enabled={canGenerateAISummary} reports={aiReportsWithSources ?? []} loadError={Boolean(aiReportsError || aiSourcesError)} />}
       {canRead && <PatientEmergencyPanel patientId={patientId} patientName={profile.display_name} dateOfBirth={profile.date_of_birth} conditions={(emergencyConditions ?? []).map((item) => ({ id: item.id, label: item.name }))} allergies={(emergencyAllergies ?? []).map((item) => ({ id: item.id, label: item.substance, detail: item.reaction }))} medications={(medications ?? []).filter((item) => item.status === "active").map((item) => ({ id: item.id, label: item.medicine_name, detail: [item.strength, item.route].filter(Boolean).join(" · ") }))} contacts={emergencyContacts ?? []} alerts={emergencyAlerts ?? []} canWrite={Boolean(canWrite)} contactsError={Boolean(emergencyContactsError)} alertsError={Boolean(emergencyAlertsError)} summaryError={Boolean(emergencyAllergiesError || emergencyConditionsError || medicationsError)} />}
       {canRead && <CaregiverHandoverPanel patientId={patientId} currentUserId={user.id} lifeStage={profile.life_stage} recipients={handoverRecipients ?? []} handovers={handovers ?? []} canWrite={Boolean(canWrite)} loadError={Boolean(handoversError || handoverRecipientsError)} />}
       {canInviteCaregiver && <InvitationPanel patientId={patientId} invitations={invitations ?? []} relationships={inviteRelationships ?? []} loadError={Boolean(invitationsError || inviteRelationshipsError)} />}

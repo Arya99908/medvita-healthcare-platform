@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(133);
+select extensions.plan(135);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -266,6 +266,12 @@ select extensions.throws_ok($$insert into public.clinical_notes(patient_id,docto
 reset role;
 delete from public.patient_relationships where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='77777777-7777-4777-8777-777777777777' and relationship_role='doctor';
 delete from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='77777777-7777-4777-8777-777777777777' and permission in ('read','clinical_notes');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.lives_ok($$insert into public.consent_records(patient_id,granted_by,granted_to,scope,purpose,expires_at) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222','ai_summary','One-time fictional AI summary consent',now()+interval '10 minutes')$$,'patient can record short-lived one-time consent for AI summaries');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.throws_ok($$insert into public.consent_records(patient_id,granted_by,granted_to,scope,purpose,expires_at) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','33333333-3333-4333-8333-333333333333','33333333-3333-4333-8333-333333333333','ai_summary','Caregiver cannot self-authorize AI data sharing',now()+interval '10 minutes')$$,'42501',null,'writable caregiver cannot grant AI processing consent for the patient');
+reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.throws_ok($$select * from public.create_patient_invitation('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','medvita-invitee@example.invalid','doctor',false)$$,'42501',null,'patient cannot invite an unverified doctor');
