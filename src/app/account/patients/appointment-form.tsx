@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, type ChangeEvent } from "react";
 import { CalendarDays, Check, Plus } from "lucide-react";
 import { createAppointment, type AppointmentFormState } from "./actions";
+import VoiceDictation from "@/components/voice-dictation";
 
 const initialState: AppointmentFormState = { status: "idle", message: "" };
 
@@ -36,7 +37,7 @@ export default function AppointmentForm({ patientId }: { patientId: string }) {
       <input type="hidden" name="endsAtOffset" defaultValue="0" />
       <label htmlFor="appointment-location">Location <span>(optional)</span></label>
       <input id="appointment-location" name="location" maxLength={200} placeholder="Clinic or video visit details" />
-      <label htmlFor="appointment-notes">Notes <span>(optional)</span></label><textarea id="appointment-notes" name="notes" rows={3} maxLength={1000} />
+      <label htmlFor="appointment-notes">Notes <span>(optional)</span></label><textarea id="appointment-notes" name="notes" rows={3} maxLength={1000} /><VoiceDictation targetId="appointment-notes" />
       {state.message && <p className={`account-form-message ${state.status}`} role="status">{state.status === "success" && <Check size={15} />}{state.message}</p>}
       <button className="primary-button account-submit" type="submit" disabled={pending}><Plus size={16} />{pending ? "Saving…" : "Save appointment"}</button>
     </form>

@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, type ChangeEvent } from "react";
 import { Check, ClipboardList, Plus } from "lucide-react";
 import { createCaregiverTask, updateCaregiverTaskStatus, type CareLogFormState } from "./actions";
+import VoiceDictation from "@/components/voice-dictation";
 
 const initialState: CareLogFormState = { status: "idle", message: "" };
 
@@ -21,7 +22,7 @@ export function CareTaskForm({ patientId, assignees }: { patientId: string; assi
       <label htmlFor="care-task-assignee">Assign to</label><select id="care-task-assignee" name="assignedTo" defaultValue=""><option value="">You</option>{assignees.map((assignee) => <option key={assignee.user_id} value={assignee.user_id}>{assignee.relationship_role.replaceAll("_", " ")} · account ending {assignee.user_id.slice(-4)}</option>)}</select>
       <label htmlFor="care-task-title">Task</label><input id="care-task-title" name="title" minLength={2} maxLength={120} required placeholder="e.g. Prepare for the clinic visit" />
       <label htmlFor="care-task-due-at">Due date and time <span>(optional)</span></label><input id="care-task-due-at" name="dueAt" type="datetime-local" onChange={updateTimezoneOffset} /><input type="hidden" name="dueAtOffset" defaultValue="0" />
-      <label htmlFor="care-task-notes">Notes <span>(optional)</span></label><textarea id="care-task-notes" name="notes" rows={3} maxLength={500} placeholder="Short handover or preparation note" />
+      <label htmlFor="care-task-notes">Notes <span>(optional)</span></label><textarea id="care-task-notes" name="notes" rows={3} maxLength={500} placeholder="Short handover or preparation note" /><VoiceDictation targetId="care-task-notes" />
       {state.message && <p className={`account-form-message ${state.status}`} role="status">{state.status === "success" && <Check size={15} />}{state.message}</p>}
       <button className="primary-button account-submit" type="submit" disabled={pending}><Plus size={16} />{pending ? "Saving…" : "Save care task"}</button>
     </form>
