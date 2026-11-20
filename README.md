@@ -1,53 +1,203 @@
-# MedVita
+# MEDVITA
 
 **Your Health. Your Life. One Connected Ecosystem.**
 
-MedVita is an early life-stage-aware healthcare prototype. The root page is a responsive, synthetic competition demo; authenticated account routes retain their Supabase-backed profile and care workflows. The presentation demo uses local browser storage and does not read or write authenticated patient records. It is not a clinical system or production medical record service.
+MEDVITA is a life-stage-aware healthcare platform prototype. It combines a public, interactive presentation demo with a separate Supabase-backed account workspace. The demo is designed to showcase the product journey from a family overview through life-stage care, records, coordination, and reporting. It uses fictional data and is not a clinical service.
 
-## Run locally
+**Live prototype:** [medvita-healthcare-platform.vercel.app](https://medvita-healthcare-platform.vercel.app)
 
-Requirements: Node.js 22 or newer.
+## Contents
 
-```sh
-npm install
+- [Quick start](#quick-start)
+- [The demo, from first screen to last](#the-demo-from-first-screen-to-last)
+- [Profiles and life-stage features](#profiles-and-life-stage-features)
+- [All 22 destinations](#all-22-destinations)
+- [Guided presentation journeys](#guided-presentation-journeys)
+- [Accessibility and supported languages](#accessibility-and-supported-languages)
+- [Data, privacy, and simulation boundaries](#data-privacy-and-simulation-boundaries)
+- [Authenticated account workspace](#authenticated-account-workspace)
+- [Environment configuration](#environment-configuration)
+- [Database and migrations](#database-and-migrations)
+- [Deploying to Vercel](#deploying-to-vercel)
+- [Checks](#checks)
+- [Project map](#project-map)
+- [Prototype limits](#prototype-limits)
+
+## Quick start
+
+Requirements: Node.js 22 or newer and npm.
+
+```bash
+git clone https://github.com/Arya99908/medvita-healthcare-platform.git
+cd medvita-healthcare-platform
+npm ci
 npm run dev
 ```
 
-Open `http://localhost:3000`. The home screen integrates the final frontend prototype: 22 interactive destinations, six switchable fictional profiles (infant, school-age child, adolescent girl, adolescent boy, adult, senior), medical history and hospital timelines, separate exercise/nutrition/lifestyle and wellness areas, validated record editing, medicine schedules, AI summary demonstrations, documents with mock extraction, multi-view calendar, caregiver and doctor views, analytics, notifications, voice accessibility controls, and guided presentation journeys. Use Settings to reset local demo data and switch Presentation mode on for a pitch.
+Open [http://localhost:3000](http://localhost:3000). The root page opens the synthetic demo. No Supabase account, AI key, or database setup is needed to explore it.
 
-The demo is intentionally synthetic. Its structured edits and files use this browser's local storage; mock AI and OCR do not interpret clinical data. No demo data is sent to Supabase or an AI provider. The emergency screen may open device dialler links after a user action; it does not dispatch help or send caregiver messages. Authenticated patient profiles continue to use the existing consent and database controls described below.
+For a production-mode local run:
 
-## Supabase setup
+```bash
+npm run build
+npm run start
+```
 
-Use a dedicated MedVita Supabase project. Never point this prototype at another product's database.
+## The demo, from first screen to last
 
-1. Copy `.env.example` to `.env.local` and set the project URL and publishable key. Do not expose a service-role key to browser code.
-2. The connected dedicated project is `Med-Vita` (`udjcnvwvlxnmsiacbqpl`, `ap-south-1`). The migrations in `supabase/migrations/` have been applied. `src/lib/database.types.ts` is generated from this project.
-3. Generate client types with `supabase gen types typescript --project-id udjcnvwvlxnmsiacbqpl > src/lib/database.types.ts`.
-4. Local, MedVita preview, and production auth callback redirects are allow-listed. The canonical site URL is `https://medvita-healthcare-platform.vercel.app`; the previous team-scoped alias remains allowed.
-5. Run the fictional transaction-based access checks in `supabase/tests/rls_access.test.sql` against the linked dedicated project. The SQL test rolls back its fixtures and uses `finish(true)` to return a failure if an assertion fails.
+1. **Start at Overview.** Review the selected profile, latest fictional measurements, trend chart, medicine schedule, recent events, appointments, care circle, tasks, and wellness entry point.
+2. **Choose a person.** Use the profile selector to switch among six life stages. The overview, chart, records, and tools update for the selected profile.
+3. **Open a care area.** Visit a life-stage screen or another destination from the sidebar. On small screens, open the navigation drawer. Hash navigation lets you link directly to a screen, for example `/#Medical%20History`.
+4. **Record or coordinate care.** Add or edit a fictional observation, medicine, appointment, document, task, or wellness activity. Changes persist in this browser and can be reviewed in history, calendar, analytics, and reports.
+5. **Explore connections.** Review a medical timeline, prepare a deterministic demo summary, set a personal wellness goal, create a caregiver handover, or open the doctor demonstration view.
+6. **Present the story.** Select **Explore the guided demo** for a prepared journey, or turn on **Presentation mode** to reduce interface distractions. Use Settings to restore the original sample data between demonstrations.
 
-Optional AI setup: set `AI_GATEWAY_API_KEY` and `MEDVITA_AI_MODEL` as server-side environment variables locally and in Vercel. Keep both private. The presentation demo only uses fictional sample data. On an authenticated patient profile, the patient may explicitly consent to a one-time summary of selected RLS-visible general structured records; sensitive adolescent entries and uploaded document contents are excluded. Each summary stores its date range and source links. Without both AI settings, live summaries are unavailable and no patient records are sent; the demo remains clearly labeled sample mode.
+The demo clock is fixed at **20 November 2026**. Calendar and record times use **Asia/Kolkata (IST, UTC+05:30)**.
 
-The database contains 51 public tables, all with RLS enabled, and a private `medical-documents` bucket. Profile writers can run English OCR on JPG/PNG files and PDFs of up to five pages directly in their browser; the worker, WebAssembly runtime, PDF renderer, and language model are self-hosted. OCR text stays local until a profile writer explicitly saves it as pending review. It never becomes a verified fact or a structured clinical record automatically. Doctors can add append-only clinician notes and AI-summary reviews when the patient has granted separate clinical-note consent; general record access remains read-only, and permission expires after 90 days or earlier revocation. A privacy-filtered activity feed records new care-record changes with actor, category, and time, without copying health-note content; sensitive adolescent events use the same consent-aware read rule as the underlying data. The in-app notification center sends generic alerts for care-task assignment, creator-only appointment reminders, generic medication schedule reminders, vaccination date reminders, and child follow-up date reminders that a caregiver explicitly opts into; each category can be turned off per account. Appointment, selected medication, vaccination, and child follow-up reminders are released by a one-minute Supabase Cron job. Infant and child profiles include structured feeding, bowel, vomiting, growth, urination, sleep, temperature, vaccination, and developmental observation records; pediatric vital access is restricted to temperature readings. Adult and senior profiles support reported condition notes (including hypertension and diabetes examples), vital readings, and care tasks assigned to the signed-in user or an active linked writable caregiver. Authorized profile writers can add patient or caregiver reported hospital visits and admissions, with optional private discharge-document links; users can also save laboratory values and reference ranges as written, link test-report files, and keep entries unverified; adolescent entries support sensitive visibility. Senior profiles also have a saved-data overview of conditions, schedules, due tasks, symptoms, appointments, linked care roles and self-reported caregiver availability, emergency logs, and emergency access; availability is self-reported, may be outdated, visible only to linked readers, and not emergency dispatch. Medicine schedules and taken/missed/skipped/uncertain events can be recorded from existing care instructions; no prescription advice or automatic refill reminders are provided. Child caregiver entries can send an opt-in generic reminder on a date the caregiver entered, at 9:00 AM in the time zone saved with the record; follow-up reminders also use only caregiver-entered dates. MedVita does not generate vaccine schedules or compare developmental observations with age norms. The authenticated patient timeline also includes an account-backed Remedies & Wellness center for age-aware general education, personal goals, exercise/meal/water/habit logs, calendar scheduling, weekly and month-to-date progress summaries, and goal-log streaks; it does not calculate health targets or provide treatment advice. The account export uses an invoker-privilege RPC so RLS applies, excludes caregiver-invitation and sharing token hashes, and does not include uploaded file contents or browser-only demo data. Account holders can request password-reconfirmed account-deletion review, withdraw a pending request, and see its status; administrators can record an audited outcome. No outcome deletes the account or health data. Permanent deletion still needs approved retention rules and an execution workflow. The security advisor reported no findings after moving `SECURITY DEFINER` helpers out of the exposed `public` schema. Synthetic presentation profiles remain in the frontend and are not inserted into patient tables.
+## Profiles and life-stage features
 
-## Delivery status
+All six profiles are fictional and can be switched without leaving the demo:
 
-- **Working locally:** responsive dashboard; six fictional profiles and timed presentation walkthrough; shared, persistent text-size and contrast controls across demo and account pages; overview, timeline, medicines, appointments, wellness, documents, and emergency demo sections; stage-specific synthetic care logs; local sample notes; demo medication toggles; wellness checklist; filename-only document selection; JSON report export; structured synthetic AI summary with a clearly labeled static fallback.
-- **Connected:** Supabase browser/server clients, session-refresh proxy, PKCE confirmation and password-recovery callbacks; email/password sign-in, sign-up, and password recovery UI; authenticated `/account` for profile access, self-profile creation or pending guardian requests, RLS-filtered JSON export, and patient records; `/account/doctor` accepts professional registration details for manual administrator review, with credential values stored privately; `/account/admin` provides an audited doctor-verification queue and restricted decision-history panel for explicitly assigned platform administrators; see [administrator setup](docs/admin-setup.md). The review is manual and does not check a professional registry. The doctor area also provides consented patient case views at `/account/doctor/patients/[patientId]`, append-only clinician-authored notes, and patient-visible AI-summary reviews. Adult and senior patients invite a verified doctor using a confirmed email; accepted doctor access is read-only for general records, separately consented for notes and AI-summary reviews, expires after 90 days, and can be revoked. Clinicians cannot edit general patient records or prescribe through this prototype. Readable patient profiles include a sourced, account-backed Remedies & Wellness center with saved goals, daily logs, and calendar scheduling. Patient-owned profiles can request a one-time AI summary of general structured records after confirming consent; source links and dated output are stored in the account, and caregiver accounts cannot authorize AI sharing. The provider is not configured in the recorded deployment, so live summaries remain unavailable until server-side credentials and a model are configured. `/account/care` lists assigned tasks across readable profiles with open/completed/missed filters; `/account/calendar` offers month, week, day, and 30-day agenda views across readable profiles plus an authenticated ICS download; `/account/notifications` lists in-app task-assignment alerts plus scheduled appointment, medication, and caregiver-opted vaccination date reminders, with separate preferences; each readable patient profile links to `/account/patients/[patientId]/reports` for date-filtered charts, event summaries, and print-to-PDF output. Read/write profile timelines include symptom observations, infant/child care, adolescent private cycle notes, adult/senior condition notes and vital readings, caregiver tasks, appointments, medicine notes/schedules/dose logs, a privacy-filtered activity feed, and private document library with profile-scoped name/type/date search and optional local English OCR, pending text review, and no automatic promotion into medical records; the original file and its OCR text can be removed by the uploader or patient, leaving a deletion record for linked health records and audit history. No legal retention schedule is configured. Users with active write access can add unverified entries and calendar events, assign care tasks to themselves or an active linked writable caregiver, enter schedules from an existing care plan, and record taken/missed/skipped/uncertain medicine events; the adolescent account can add sensitive cycle notes; care-task assignees and creators can complete or reopen tasks, mark a task missed only after its due time, and remove only tasks they own or are assigned; users can update appointment status; only the person who entered a medicine note can edit its details or status or remove it after it is marked discontinued or historical and has no linked schedule or dose history; writable profiles can edit and remove calendar events with a confirmation prompt. Changes/removals for authored symptoms, conditions, vitals, child-care logs, vaccinations, developmental observations, and private-cycle notes are available beside each timeline entry; RLS restricts edits to the author and keeps verified entries immutable, while cycle notes remain limited to the adolescent patient account. The activity history records supported updates/removals. Changing a medicine to a non-current status also attempts to pause active schedules; the UI reports if that update fails. Users can upload supported documents up to 4 MB. Timeline note authors can edit or remove only their own unverified notes; removals remain visible as privacy-filtered activity events. Readable patient profiles include a medical emergency summary and emergency action history; users with active write access can manage contact entries and record an action, while calls and location shares require a separate user gesture on the device. Writable profiles can create point-in-time handover snapshots from general records and address them to an already-linked reader; they do not change access or notify recipients, and sensitive adolescent records are excluded. Adult and senior profile owners can create one-use, seven-day caregiver or family invitations bound to a confirmed email, choose read-only or read/write access, and revoke active invitations or linked non-patient access; the link must be shared manually, and minor-profile invitations are not enabled. Child care, vaccination, and developmental records are limited to infant and child profiles; pediatric vital entries are limited to temperature readings. Sensitive cycle reads are filtered by explicit consent through RLS. All readings, condition notes, schedules, dose events, calendar events, and emergency action logs remain unverified reports. No clinical growth percentile or vital interpretation is calculated. Patient reports summarize only RLS-visible records over selectable 7-, 30-, 90-, or 365-day windows, include available sources and date ranges, warn when data is partial, and can be printed or saved as PDF. Development observations do not assess milestones against age norms. Document downloads use short-lived private links. Optional English OCR runs on this device; saved text stays pending review and is not promoted to health records. Symptom severity is self-reported, not clinically assessed. Appointment entry, edits, removal, and status changes do not contact clinics or external calendars; calendar events can create a private in-app reminder about 24 hours before an upcoming event; email, SMS, and push reminders are not configured. Care-task assignment notices, appointment reminders, and explicitly configured medication schedule reminders are delivered only in-app and can be disabled per account; scheduled reminders are checked once per minute. Email, SMS, push, retries, and delivery logs are not configured. Medicine notes do not prescribe or check doses. `.env.example`, applied database schema, RLS policies, and private storage bucket. Vercel has the public project URL and publishable key in all environments; the local `.env.local` is ignored by Git.
-- **GitHub:** private repository at [Arya99908/medvita-healthcare-platform](https://github.com/Arya99908/medvita-healthcare-platform). No secrets or real patient records are committed.
-- **Vercel:** the protected production alias is [medvita-healthcare-platform.vercel.app](https://medvita-healthcare-platform.vercel.app). The previous team-scoped alias remains attached. Supabase URL and publishable key are configured; AI Gateway credentials and a model are not configured, so authenticated summaries use sample mode. Vercel team authentication is required.
-- **Not yet implemented or verified:** permanent account deletion execution and linked-record retention rules, medication refill reminders, recurring calendar events, advanced search and filters beyond care-task status, Google Calendar sync, clinical trend interpretation and physical-activity analytics, vaccine schedule generation and due-date notifications, clinically reviewed developmental milestone sets and age norms, developmental follow-up notifications, clinic booking or external cancellation, broader clinic operations, user and role administration, hospital configuration and directory management, emergency-number administration, clinical-content publishing, notification and AI-usage monitoring, error monitoring, integration configuration, general administrator audit-log review UI, doctor-initiated patient access requests, verified guardian invitations for minor profiles, granular permissions beyond read/write and clinical-note consent, production adolescent-consent workflows, vital trends and clinician review, promotion of user-reviewed OCR candidates into structured medical records, document retention rules and legal review, longitudinal trend analysis and clinician-approved deterministic safety rules, configured AI provider credentials and live-provider verification, email, SMS, and push delivery, notification retries and delivery logs, automatic emergency contact escalation or notification, administrator-managed regional emergency-number configuration, wearable-button integration, invitation email delivery and permission-transfer workflows, administrator workflows, complete end-to-end flows, and legal/privacy/clinical review. Adult and senior patients can invite a verified doctor by confirmed email; the single-use invitation expires after seven days and the read/note permissions expire after 90 days or earlier revocation. Doctors can append clinician notes and AI-summary reviews only while verified and consented; reviews are dated, append-only, visible to the patient and linked readers, and do not alter generated summaries. The caregiver activity feed records new record changes without copying health-note text; historical events are not backfilled. Medication schedules, logs, and calendar entries remain unverified user-entered records. The account workflow remains an initial prototype; pending guardian requests do not grant record access.
+| Profile | Demo focus |
+| --- | --- |
+| Aarav Sharma · 9 months | Infant feeding, sleep, growth observations, vaccinations, and caregiver notes |
+| Vihaan Mehta · 8 years | School-age growth, sleep, activity, vaccination, and school/play observations |
+| Ananya Sharma · 16 years | Adolescent girl wellbeing, menstrual history, privacy-aware notes, and healthy routines |
+| Kabir Nair · 16 years | Adolescent boy wellbeing, puberty education, activity, sleep, and private questions |
+| Priya Sharma · 42 years | Adult health, reported hypertension and diabetes context, medicines, and preventive records |
+| Rajesh Sharma · 72 years | Senior care, chronic-condition context, mobility, medicines, family coordination, and hospital history |
 
-The Supabase default email sender is rate-limited; configure a trusted SMTP provider before relying on account confirmation and recovery emails. The emergency screen's India 112 and Karnataka 108 examples reference the [Ministry of Home Affairs ERSS page](https://www.mha.gov.in/emergency-response-support-system-erss) and a [Karnataka Health and Family Welfare Department report](https://hfwcom.karnataka.gov.in/storage/pdf-files/AnnualreportJanuaryendEng2024-25.pdf). Configure and verify regional emergency options before any real-world use.
+Profile details, allergies, conditions, measurements, prescriptions, appointments, and care events are sample values for the presentation. They are not verified patient information.
 
-Use fictional data only. Do not rely on this prototype for diagnosis, treatment, medication decisions, emergency dispatch, or clinical record keeping. No regulatory compliance is claimed.
+## All 22 destinations
+
+| Destination | What the prototype demonstrates |
+| --- | --- |
+| **Overview** | Profile-specific summary, recent measurements and charts, scheduled medicines, upcoming visits, care team, tasks, and shortcuts. |
+| **My Health Profile** | Demographic and care-context details, including reported allergies, conditions, history, clinician, hospital, contact, and lifestyle information. |
+| **Child Health** | Infant and school-age observation forms for feeding, bowel movements, vomiting, diapers, temperature, sleep, growth, vaccination, and milestones. |
+| **Adolescent Health** | Female and male educational views, wellbeing records, and sensitive personal entries excluded from shared demo views. Menstrual details appear only in the girl profile. |
+| **Adult Health** | Vitals, activity, symptoms, prevention, laboratory and consultation records. |
+| **Elderly Care** | Symptoms, mobility and hydration observations, medicines, caregiver tasks, clinician instructions, handovers, and emergency access. |
+| **Medical History** | Filterable chronological record timeline with date/category filters, source and demo-verification labels, linked document previews, and add/edit/delete actions. |
+| **Medical Documents** | Local PDF, image, or text uploads; metadata, search, preview, download, removal, and correction of clearly mock extraction fields. |
+| **Medications** | Fictional prescription schedules, four daily time groups, date ranges, refill details, taken/missed dose records, and prescription history. |
+| **AI Health Intelligence** | Deterministic summaries based on the selected fictional records, suggested or custom questions, historical comparisons, missing-information prompts, saved reports, and downloads. |
+| **Remedies & Wellness** | Educational wellness centre with profile-specific recommendations and precautions. |
+| **Exercise** | Movement recommendations, saved plans, personal weekly goals, dated completions, progress, and undo. |
+| **Food & Nutrition** | Meal and hydration education, recorded preference, allergy context, and activity tracking. |
+| **Habits & Lifestyle** | Sleep, hygiene, routines, personal goals, and dated activity tracking. |
+| **Medical Calendar** | Month, week, day, and agenda views; event categories; create/edit/delete, status, recurrence, reminders, and ICS export. Duplicate event entries are checked. |
+| **Caregiver Management** | Fictional care contacts, role/permission demonstrations, care tasks, medication administration, activity history, and handover summaries. |
+| **Doctor Dashboard** | Profile switching, shared records, prescriptions, trends, follow-up scheduling, and separately labelled clinician-note demonstrations. |
+| **Hospital Records** | Filtered visits, admissions, discharge, and clinical history with linked document references. |
+| **Emergency Assistance** | Emergency information, confirmation flow, local location request, and device dialler links for configured numbers. |
+| **Analytics & Reports** | Measurement trends, symptom and adherence summaries, wellness progress, date ranges, report previews, downloads, and browser print. |
+| **Notifications** | Simulated in-app notices with read/unread and category filters, badge counts, and preferences. |
+| **Settings** | Profile, navigation language, theme, high contrast, larger text, confidentiality reminders, emergency number, export, and confirmed demo reset. |
+
+## Guided presentation journeys
+
+Choose **Explore the guided demo** in the sidebar to start a prepared sequence. **Next stop** advances the story; **Finish journey** returns to the chooser.
+
+1. **A growing start** — child health → profile → analytics → demo summary.
+2. **Space to grow** — adolescent health → wellness → calendar.
+3. **Everyday prevention** — adult health → medications → analytics.
+4. **Care that stays connected** — senior care → history → medication → hospital records → caregiver handover → demo summary → doctor view.
+5. **One health ecosystem** — wellness → exercise → nutrition → habits → calendar → hospital history → emergency → caregiver management → notifications.
+
+For a clean pitch, reset the demo in **Settings**, enable **Presentation mode**, then start a journey. Reset removes this browser's demo edits and local uploads.
+
+## Accessibility and supported languages
+
+- Responsive desktop, tablet, and mobile layout with a mobile navigation drawer.
+- Keyboard focus styles, dialog controls, search, larger text and controls, high contrast, and light/dark themes.
+- English interface content with Hindi and Kannada translations for the main navigation labels. Health content itself remains in English.
+- Optional browser speech output and search dictation. These controls are user initiated and depend on browser support and permissions.
+- Error recovery controls keep the navigation available if a demo screen fails.
+
+## Data, privacy, and simulation boundaries
+
+- Demo records and preferences are stored in this browser's `localStorage`; they are not sent to Supabase or an AI provider. Each browser and domain has its own demo data.
+- The demo profiles and health values are fictional. Do not enter real patient information.
+- AI Health Intelligence in the demo is deterministic sample logic. It is not a clinical AI system and does not diagnose, prescribe, or recommend medication changes.
+- Document extraction, in-app notifications, reminder delivery, caregiver permissions, and handovers are demonstrations. Uploaded files remain local; the demo's mock extraction does not interpret file contents.
+- Emergency actions may open the device dialler after a user action. The prototype does not place a confirmed call, contact caregivers, or dispatch emergency services.
+- Wellness content is general education. It is not a personalised treatment, diet, or exercise plan.
+- Sensitive adolescent entries are filtered from shared demo views, but browser-local filtering is not account security or a production privacy boundary.
+
+## Authenticated account workspace
+
+The root demo is separate from the existing account-backed application. Account pages use Supabase Auth and row-level security (RLS); they require the project's Supabase environment variables and a signed-in user.
+
+| Route | Purpose |
+| --- | --- |
+| `/login` | Account sign-in and registration |
+| `/reset-password` and `/update-password` | Password recovery flow |
+| `/account` | Signed-in profile and linked patient records |
+| `/account/doctor` | Professional registration and consented doctor workspace |
+| `/account/admin` | Restricted administrator review tools |
+| `/account/care` | Care task list |
+| `/account/calendar` | Account calendar and ICS export |
+| `/account/notifications` | Account notification center and preferences |
+| `/account/security` | Account security and multi-factor settings |
+
+The account workspace has patient-owned profiles, consent-scoped caregiver/doctor access, record timelines, medication schedules and status events, document library, optional local OCR, wellness center, care tasks, appointments, emergency history, reports, and account export. Doctors cannot alter general patient records through the demo doctor dashboard; account clinical notes and AI-summary reviews follow separate consent rules. See [administrator setup](docs/admin-setup.md), [frontend architecture](docs/FRONTEND_ARCHITECTURE.md), and [delivery notes](docs/FINAL_FRONTEND_INTEGRATION.md) for more detail.
+
+## Environment configuration
+
+The presentation demo works without environment variables. To use account sign-in and Supabase-backed routes:
+
+```bash
+cp .env.example .env.local
+```
+
+Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.env.local`. Never put a Supabase service-role key in browser code or commit `.env.local`.
+
+Optional live account summaries require server-side `AI_GATEWAY_API_KEY` and `MEDVITA_AI_MODEL`. Account summaries are subject to patient consent and server-side RLS filtering; without these values, live summaries are unavailable. The root presentation demo continues to use synthetic data.
+
+## Database and migrations
+
+The Supabase schema, RLS policies, storage configuration, and account features are part of this repository under [`supabase/`](supabase/). Use a dedicated MedVita Supabase project and review the migration files before applying them to any environment. The final frontend prototype archive did not require schema changes: its new presentation screens use the existing local demo data model and browser storage.
+
+The project’s Supabase Auth Site URL and callback allow-list include the canonical production URL. Do not run migrations against another product's database.
+
+## Deploying to Vercel
+
+The GitHub `main` branch is connected to the Vercel project. A push to `main` triggers a production deployment. The public production URL is [medvita-healthcare-platform.vercel.app](https://medvita-healthcare-platform.vercel.app); the root presentation demo is accessible without Vercel team login. Account routes still require Supabase authentication.
+
+To deploy manually from an authenticated Vercel CLI session:
+
+```bash
+vercel deploy --prod
+```
+
+Configure Supabase values in the Vercel project's environment settings before expecting account routes to work. Add AI Gateway variables only when enabling the optional account-summary integration.
 
 ## Checks
 
-```sh
-npm run typecheck
+```bash
 npm run lint
+npm run typecheck
 npm test
 npm run build
 ```
+
+The current merged repository's latest recorded validation is **221 passing tests**, clean lint and typecheck, and a successful Next.js production build. See [final frontend integration](docs/FINAL_FRONTEND_INTEGRATION.md) for validation scope and limits.
+
+## Project map
+
+```text
+src/app/                  Next.js pages, account routes, and API routes
+src/components/demo/      Presentation demo screens and shared UI
+src/lib/demo/             Fictional profile data and demo selectors
+src/app/medvita-demo.css  Demo-specific responsive and accessibility styles
+supabase/migrations/      Database schema and policy migrations
+supabase/tests/           Database policy and access tests
+tests/                    Frontend and application unit tests
+docs/                     Architecture, deployment, setup, and delivery notes
+```
+
+## Prototype limits
+
+MEDVITA is a demonstration, not a clinical product. Health values are user-entered or synthetic and remain unverified. The fixed demo date does not advance with the clock. Calendar recurrence supports daily, weekly, and monthly series, without per-occurrence exceptions or timezone selection. Charts show recorded values; they do not calculate clinical interpretations or growth percentiles. Browser storage has finite capacity (demo uploads are limited to 1.5 MB per file) and is not secure medical-record storage. No regulatory, clinical-validation, or production-readiness claim is made.

@@ -26,4 +26,4 @@ AI summaries, OCR, reminders, caregiver permissions, and emergency notifications
 - `npm run build` — passed with Next.js 16.4.6.
 - Browser workflow review checked profile switching, the six-profile selector, and the new navigation/screens.
 
-Vercel team SSO protection remains enabled on the production deployment.
+The production presentation URL is public; Vercel team SSO protection is disabled. Account routes still require Supabase authentication.

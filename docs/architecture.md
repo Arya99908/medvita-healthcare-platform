@@ -50,7 +50,7 @@ The migrations are applied to the dedicated `Med-Vita` project (`udjcnvwvlxnmsia
 | Emergency assistance | Implemented as a device-assisted prototype | Authenticated profile medical summary, emergency-contact add/remove, user-entered emergency action history, manual `tel:` links, and explicit device location share; the presentation dashboard still uses fictional contacts. The app does not dispatch, auto-notify contacts, store location, or confirm calls. Regional number configuration and hardware integration remain |
 | Local checks | Passing | TypeScript, lint, production build, 200 Vitest tests across 33 files, and 255 linked Supabase pgTAP RLS assertions including private doctor-submission visibility, admin-only queue and review, rejection reasons, audited verification, read-only doctor access, invitations, consent, export, revocation, and author-scoped structured-record edits/removals |
 | GitHub | Complete | Private `Arya99908/medvita-healthcare-platform`; credentials and patient records excluded |
-| Vercel | Deployed | Protected production alias and preview; deployment protection requires Vercel team authentication |
+| Vercel | Deployed | Public production presentation alias; account routes continue to require Supabase authentication |
 
 ## Required next work
 
