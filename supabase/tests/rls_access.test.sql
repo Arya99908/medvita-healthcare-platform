@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(173);
+select extensions.plan(176);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -368,6 +368,7 @@ select extensions.is((select count(*) from public.doctor_verification_submission
 select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444',true);
 select extensions.is((select count(*) from public.doctor_verification_submissions),0::bigint,'another doctor cannot read private registration details');
 select extensions.is((select count(*) from public.doctors where verification_status='pending'),0::bigint,'ordinary clinician cannot see the administrative review queue');
+select extensions.is((select count(*) from public.audit_logs where resource_type='doctor' and action in ('doctor_application_verified','doctor_application_rejected')),0::bigint,'ordinary clinician cannot read administrator doctor-review history');
 select extensions.throws_ok($$select public.review_doctor_application((select id from public.doctors where user_id='77777777-7777-4777-8777-777777777777'),'verified',null)$$,'42501',null,'ordinary clinician cannot review doctor applications');
 select set_config('request.jwt.claim.sub','66666666-6666-4666-8666-666666666666',true);
 select extensions.is((select count(*) from public.doctor_verification_submissions),1::bigint,'platform administrator can read private registration submission');
@@ -376,6 +377,8 @@ select extensions.throws_ok($$select public.review_doctor_application((select id
 select extensions.lives_ok($$select public.review_doctor_application((select id from public.doctors where user_id='77777777-7777-4777-8777-777777777777'),'verified',null)$$,'platform administrator can verify an application with submitted registration details');
 select extensions.is((select verification_status from public.doctors where user_id='77777777-7777-4777-8777-777777777777'),'verified','review decision updates the doctor verification status');
 select extensions.is((select count(*) from public.audit_logs where actor_user_id='66666666-6666-4666-8666-666666666666' and action='doctor_application_verified' and resource_type='doctor'),1::bigint,'doctor verification decision is recorded in the administrator audit log');
+select extensions.is((select count(*) from public.audit_logs where resource_type='doctor' and action='doctor_application_verified'),1::bigint,'platform administrator can review the doctor decision history');
+select extensions.is((select count(*) from public.audit_logs where resource_type='patient'),0::bigint,'platform administrator does not receive general patient audit history');
 
 reset role;
 -- Raise an error if any assertion fails so `supabase db query` returns non-zero.

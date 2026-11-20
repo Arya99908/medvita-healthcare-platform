@@ -25,6 +25,15 @@ export default async function AdminDashboardPage() {
     : { data: [], error: null };
   const submissionByDoctor = new Map((submissions ?? []).map((submission) => [submission.doctor_id, submission]));
   const loadError = Boolean(doctorsError || submissionsError);
+  const { data: reviewHistory, error: historyError } = await supabase.from("audit_logs")
+    .select("id,actor_user_id,action,resource_id,metadata,created_at")
+    .eq("resource_type", "doctor").in("action", ["doctor_application_verified", "doctor_application_rejected"])
+    .order("created_at", { ascending: false }).limit(100);
+  const reviewedDoctorIds = [...new Set((reviewHistory ?? []).map((entry) => entry.resource_id).filter((id): id is string => Boolean(id)))];
+  const { data: reviewedDoctors } = reviewedDoctorIds.length
+    ? await supabase.from("doctors").select("id,display_name").in("id", reviewedDoctorIds)
+    : { data: [] };
+  const reviewedDoctorById = new Map((reviewedDoctors ?? []).map((doctor) => [doctor.id, doctor.display_name]));
 
   return <main className="account-page">
     <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Account</Link><form action={signOut}><button type="submit" className="account-signout"><LogOut size={15} /> Sign out</button></form></div></header>
@@ -45,7 +54,17 @@ export default async function AdminDashboardPage() {
               </article>;
             })}</div>
           </section> : <section className="account-card"><div className="account-empty-state"><ClipboardCheck size={23} /><strong>No applications are waiting</strong><span>New doctor submissions will appear here after they provide professional registration details.</span></div></section>}
-        <p className="admin-scope-note">This workspace currently handles doctor verification only. Other administrator functions from the project brief need separate reviewed workflows.</p>
+        <section className="account-card admin-history-card" aria-labelledby="review-history-title">
+          <div className="account-card-heading"><div><span className="micro-label">AUDIT HISTORY</span><h2 id="review-history-title">Doctor review decisions</h2><p>Recent verification decisions and administrator notes. Patient audit events are not included.</p></div><span className="account-card-icon"><ShieldCheck size={18} /></span></div>
+          {historyError ? <div className="account-empty-state"><strong>Review history could not be loaded</strong><span>Try again after checking administrator access.</span></div>
+            : reviewHistory?.length ? <div className="admin-history-list">{reviewHistory.map((entry) => {
+              const metadata = typeof entry.metadata === "object" && entry.metadata !== null && !Array.isArray(entry.metadata) ? entry.metadata : {};
+              const reason = "reason" in metadata && typeof metadata.reason === "string" ? metadata.reason : "";
+              const decision = entry.action === "doctor_application_verified" ? "Verified" : "Rejected";
+              return <article className="admin-history-row" key={entry.id}><div><strong>{reviewedDoctorById.get(entry.resource_id ?? "") ?? "Doctor application"}</strong><span>{decision} · {new Date(entry.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>{reason && <p>{reason}</p>}</div><small>Admin {entry.actor_user_id?.slice(0, 8) ?? "system"}</small></article>;
+            })}</div> : <div className="account-empty-state"><strong>No review decisions recorded</strong><span>Completed reviews will be listed here.</span></div>}
+        </section>
+        <p className="admin-scope-note">This workspace currently handles doctor verification and its review history only. Other administrator functions from the project brief need separate reviewed workflows.</p>
       </div>
     </div>
   </main>;
