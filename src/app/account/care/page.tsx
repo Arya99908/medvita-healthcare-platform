@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, CalendarDays, ClipboardList, LogOut, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Bell, CalendarDays, ClipboardList, LogOut, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "../actions";
 import CareTaskList from "./care-task-list";
@@ -30,7 +30,7 @@ export default async function CareDashboardPage({ searchParams }: { searchParams
   const now = new Date().getTime();
 
   return <main className="account-page care-dashboard-page">
-    <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Profiles</Link><Link href="/account/calendar" className="account-back-link"><CalendarDays size={15} /> Calendar</Link><form action={signOut}><button type="submit" className="account-signout"><LogOut size={15} /> Sign out</button></form></div></header>
+    <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Profiles</Link><Link href="/account/notifications" className="account-back-link"><Bell size={15} /> Notifications</Link><Link href="/account/calendar" className="account-back-link"><CalendarDays size={15} /> Calendar</Link><form action={signOut}><button type="submit" className="account-signout"><LogOut size={15} /> Sign out</button></form></div></header>
     <div className="care-dashboard-content">
       <div className="account-welcome"><span className="micro-label">CARE TEAM WORKSPACE</span><h1>Care tasks</h1><p>Review tasks assigned to you across profiles you can read.</p></div>
       <div className="account-safety-note"><ShieldCheck size={17} /><span>This list includes only tasks assigned to your signed-in account and visible through active profile access. Task notes remain unverified care coordination records.</span></div>

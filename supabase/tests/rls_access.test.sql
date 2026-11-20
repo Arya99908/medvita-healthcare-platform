@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(106);
+select extensions.plan(111);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -143,6 +143,23 @@ select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222'
 select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,due_at,assigned_to,created_by) values('99999999-9999-4999-8999-999999999999','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional authorized care task','2026-12-21 00:00:00+00','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can add an own-profile care task');
 select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional unauthorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot add a care task to another patient profile');
 select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,due_at,assigned_to,created_by) values('abababab-abab-4bab-8bab-abababababab','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task assigned to caregiver','2026-11-19 00:00:00+00','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222')$$,'patient can assign a task to an active writable caregiver');
+select extensions.is((select count(*) from public.notifications where user_id='33333333-3333-4333-8333-333333333333' and patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'task creator cannot read a notification addressed to another account');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.is((select count(*) from public.notifications where category='caregiver_task' and patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),1::bigint,'assigned caregiver receives one in-app task notification by default');
+select extensions.is((select title from public.notifications where category='caregiver_task' and patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' limit 1),'A care task was assigned to you','notification text does not include the task title or health details');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+insert into public.notification_preferences(user_id,category,channel,enabled) values('33333333-3333-4333-8333-333333333333','caregiver_task','in_app',false);
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+insert into public.caregiver_tasks(id,patient_id,title,assigned_to,created_by) values('cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task while alerts are off','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.is((select count(*) from public.notifications where category='caregiver_task' and patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),1::bigint,'disabled in-app preference suppresses new task notifications');
+update public.notification_preferences set enabled=true where user_id='33333333-3333-4333-8333-333333333333' and category='caregiver_task' and channel='in_app';
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+insert into public.caregiver_tasks(id,patient_id,title,assigned_to,created_by) values('dededede-dede-4ded-8ded-dededededede','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task after alerts resume','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.is((select count(*) from public.notifications where category='caregiver_task' and patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),2::bigint,'enabling in-app preference restores task notifications');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task for unlinked user','55555555-5555-4555-8555-555555555555','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot assign a task to an unlinked account');
 select extensions.throws_ok($$update public.caregiver_tasks set status='missed' where id='99999999-9999-4999-8999-999999999999'$$,'42501',null,'care task cannot be marked missed before its due time');
 select extensions.lives_ok($$update public.caregiver_tasks set status='complete' where id='99999999-9999-4999-8999-999999999999'$$,'patient with active write access can complete own care task');

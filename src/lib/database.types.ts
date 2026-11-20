@@ -1515,6 +1515,7 @@ export type Database = {
         Row: {
           category: string
           created_at: string
+          dedupe_key: string | null
           delivery_status: string
           id: string
           message: string
@@ -1529,6 +1530,7 @@ export type Database = {
         Insert: {
           category: string
           created_at?: string
+          dedupe_key?: string | null
           delivery_status?: string
           id?: string
           message: string
@@ -1543,6 +1545,7 @@ export type Database = {
         Update: {
           category?: string
           created_at?: string
+          dedupe_key?: string | null
           delivery_status?: string
           id?: string
           message?: string

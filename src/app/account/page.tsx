@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Baby, CalendarDays, Check, ClipboardList, Clock3, Download, Heart, LogOut, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, Baby, Bell, CalendarDays, Check, ClipboardList, Clock3, Download, Heart, LogOut, ShieldCheck, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import PatientProfileForm from "./profile-form";
 import { signOut } from "./actions";
@@ -20,7 +20,7 @@ export default async function AccountPage() {
   const hasLoadError = Boolean(profilesError || relationshipsError);
 
   return <main className="account-page">
-    <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account/care" className="account-back-link"><ClipboardList size={15} /> Care tasks</Link><Link href="/account/calendar" className="account-back-link"><CalendarDays size={15} /> Calendar</Link><Link href="/" className="account-back-link"><ArrowLeft size={15} /> Presentation demo</Link><form action={signOut}><button type="submit" className="account-signout"><LogOut size={15} /> Sign out</button></form></div></header>
+    <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account/care" className="account-back-link"><ClipboardList size={15} /> Care tasks</Link><Link href="/account/notifications" className="account-back-link"><Bell size={15} /> Notifications</Link><Link href="/account/calendar" className="account-back-link"><CalendarDays size={15} /> Calendar</Link><Link href="/" className="account-back-link"><ArrowLeft size={15} /> Presentation demo</Link><form action={signOut}><button type="submit" className="account-signout"><LogOut size={15} /> Sign out</button></form></div></header>
     <div className="account-layout">
       <div className="account-main-column">
         <div className="account-welcome"><span className="micro-label">YOUR PRIVATE HEALTH SPACE</span><h1>Patient profiles</h1><p>Manage your own profile and review any pending guardian requests.</p></div>
