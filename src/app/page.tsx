@@ -1,5 +1,9 @@
 import Medvita from "@/components/demo/medvita";
-
-export default function HomePage() {
-  return <Medvita />;
+import { DemoBoundary } from "@/components/demo/extensions";
+export default function Page() {
+  return (
+    <DemoBoundary>
+      <Medvita />
+    </DemoBoundary>
+  );
 }

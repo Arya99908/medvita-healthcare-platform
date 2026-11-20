@@ -3,10 +3,8 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
   Download,
   FileText,
-  Leaf,
   MapPin,
   Phone,
   Plus,
@@ -226,6 +224,7 @@ export function CalendarScreen({
               ["Time", `${selected.time}–${selected.end}`],
               ["Type", selected.type],
               ["Doctor", selected.doctor],
+              ["Hospital / clinic", selected.hospital],
               ["Caregiver", selected.caregiver],
               ["Location", selected.location],
               ["Recurrence", selected.recurrence],
@@ -539,273 +538,6 @@ export function DocumentsScreen({
     </>
   );
 }
-const wellnessContent = {
-  Exercise: [
-    [
-      "Gentle movement",
-      "A comfortable movement break",
-      "Build a consistent activity routine.",
-      "Choose an activity appropriate to ability. Stop if uncomfortable; ask your clinician about restrictions.",
-    ],
-    [
-      "Balance & mobility",
-      "Move with confidence",
-      "Support a daily mobility habit.",
-      "For older adults, use stable support and a caregiver if needed. Seek professional guidance after falls.",
-    ],
-    [
-      "Strength & flexibility",
-      "Make room for movement",
-      "Keep a weekly education and activity plan.",
-      "Seek qualified guidance on suitable movements; avoid painful exercises.",
-    ],
-  ],
-  "Food & nutrition": [
-    [
-      "Breakfast",
-      "Make a balanced start",
-      "Plan meals around preferences and known allergies.",
-      "Check all ingredients. Ask a clinician or dietitian about individual needs.",
-    ],
-    [
-      "Lunch & dinner",
-      "Plan the next meal",
-      "Keep a varied, regular meal routine.",
-      "Individual medical diets require professional guidance. Do not change prescribed care.",
-    ],
-    [
-      "Snacks & hydration",
-      "Keep your routine visible",
-      "Record drinks and snacks through the day.",
-      "Follow clinician guidance where fluid or dietary restrictions apply.",
-    ],
-  ],
-  "Habits & lifestyle": [
-    [
-      "Rest & sleep",
-      "Wind down with intention",
-      "A regular routine makes sleep observations easier to track.",
-      "Discuss persistent sleep problems with a clinician.",
-    ],
-    [
-      "Hygiene & screen time",
-      "Create a calm evening",
-      "Build manageable daily habits.",
-      "Adapt routines to age, comfort and accessibility needs.",
-    ],
-    [
-      "Stress & routine",
-      "Make a little space for yourself",
-      "Keep a private reflection and one achievable goal.",
-      "Seek qualified support for persistent distress.",
-    ],
-  ],
-};
-export function WellnessScreen({
-  patient,
-  patients,
-  select,
-  entries,
-  save,
-  search,
-}: {
-  patient: Patient;
-  patients: Patient[];
-  select: (id: string) => void;
-  entries: Entry[];
-  save: (e: Entry) => void;
-  search: string;
-}) {
-  const [tab, setTab] = useState<keyof typeof wellnessContent>("Exercise");
-  const completed = entries.filter(
-    (e) => e.category === "wellness" && e.status === "Completed",
-  ).length;
-  const emergency = entries.some(
-    (e) =>
-      e.category === "observation" &&
-      e.date === TODAY &&
-      /severe chest pain|unresponsive|difficulty breathing|breathlessness|blue lips|seizure/i.test(
-        `${e.title} ${e.value}`,
-      ),
-  );
-  return (
-    <>
-      {emergency && (
-        <div className="notice warning">
-          A potentially urgent observation is recorded today. Prioritise
-          professional emergency assessment using the emergency assistance
-          button; do not rely on wellness activities.
-        </div>
-      )}
-      <div className="wellness-hero">
-        <Leaf size={38} />
-        <div>
-          <Badge>MEDVITA Remedies & Wellness Centre</Badge>
-          <h2>Small rituals. A healthier everyday.</h2>
-          <p>
-            Educational support for movement, meals and mindful routines. No
-            treatments or cures.
-          </p>
-        </div>
-        <label>
-          Wellness profile
-          <select value={patient.id} onChange={(e) => select(e.target.value)}>
-            {patients.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.stage} · {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="tabs">
-        {Object.keys(wellnessContent).map((t) => (
-          <button
-            className={tab === t ? "active" : ""}
-            key={t}
-            onClick={() => setTab(t as keyof typeof wellnessContent)}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-      {!wellnessContent[tab].some((r) =>
-        r.join(" ").toLowerCase().includes(search.toLowerCase()),
-      ) && (
-        <Empty text="No wellness recommendations match your search. Clear search to see this section." />
-      )}
-      <div className="three-col">
-        {wellnessContent[tab]
-          .filter((r) =>
-            r.join(" ").toLowerCase().includes(search.toLowerCase()),
-          )
-          .map(([label, title, why, precaution]) => {
-            const record = entries.find(
-              (e) => e.category === "wellness" && e.title === title,
-            );
-            return (
-              <Panel key={title} className="wellness-card">
-                <span className="wellness-illustration">
-                  <Leaf size={40} />
-                </span>
-                <Badge tone="grey">{label}</Badge>
-                <h2>
-                  {patient.id === "child" && tab === "Exercise"
-                    ? {
-                        "Gentle movement": "Supervised floor play",
-                        "Balance & mobility": "Explore movement together",
-                        "Strength & flexibility": "A daily play routine",
-                      }[label] || title
-                    : title}
-                </h2>
-                <p>{why}</p>
-                <dl>
-                  <dt>For</dt>
-                  <dd>
-                    {patient.stage} · {patient.name}
-                  </dd>
-                  <dt>Personal context</dt>
-                  <dd>
-                    {patient.id === "child"
-                      ? "Adapt feeding and activity to developmental stage with your paediatrician."
-                      : patient.id === "teen"
-                        ? "Support growth, privacy and a positive body image."
-                        : patient.conditions}
-                  </dd>
-                  <dt>Precautions</dt>
-                  <dd>
-                    {precaution} Allergies: {patient.allergies}.
-                  </dd>
-                </dl>
-                <div className="chip-wrap">
-                  {["Saved", "Planned", "Completed"].map((status) => (
-                    <button
-                      key={status}
-                      disabled={emergency}
-                      className={
-                        record?.status === status ||
-                        (status === "Saved" && record?.saved === "true") ||
-                        (status === "Planned" && record?.planned === "true")
-                          ? "primary"
-                          : ""
-                      }
-                      onClick={() =>
-                        save({
-                          id: record?.id || uid(),
-                          patient: patient.id,
-                          category: "wellness",
-                          title,
-                          date: TODAY,
-                          status:
-                            record?.status === "Completed" &&
-                            status !== "Completed"
-                              ? "Completed"
-                              : status,
-                          saved:
-                            status === "Saved"
-                              ? "true"
-                              : record?.saved || "false",
-                          planned:
-                            status === "Planned"
-                              ? "true"
-                              : record?.planned || "false",
-                          source: "Patient-entered",
-                          type: tab,
-                          notes: why,
-                        })
-                      }
-                    >
-                      {status === "Saved" ? (
-                        "Save"
-                      ) : status === "Planned" ? (
-                        "Add to plan"
-                      ) : (
-                        <>
-                          <Check size={14} />
-                          Complete
-                        </>
-                      )}
-                    </button>
-                  ))}
-                  {record?.status === "Completed" && (
-                    <button
-                      onClick={() => save({ ...record, status: "Planned" })}
-                    >
-                      Undo completion
-                    </button>
-                  )}
-                </div>
-              </Panel>
-            );
-          })}
-      </div>
-      <Panel
-        title="Your wellness plan"
-        subtitle={`${completed} of 9 activities completed · Weekly wellness score: ${Math.round((completed / 9) * 100)}% (demo activity score, not a health assessment)`}
-        action={
-          <button
-            onClick={() =>
-              download(
-                "medvita-monthly-wellness.txt",
-                `Monthly wellness report — ${patient.name}\n${
-                  entries
-                    .filter((e) => e.category === "wellness")
-                    .map((e) => `${e.title}: ${e.status} (${e.date})`)
-                    .join("\n") || "No wellness activities logged yet."
-                }`,
-              )
-            }
-          >
-            Monthly report
-          </button>
-        }
-      >
-        <progress max={9} value={completed} />
-        <EntryList entries={entries.filter((e) => e.category === "wellness")} />
-      </Panel>
-    </>
-  );
-}
 export function EmergencyScreen({
   patient,
   data,
@@ -1049,6 +781,14 @@ export function SettingsScreen({
             <option>Light</option>
             <option>Dark</option>
           </select>
+        </label>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={!!data.settings.contrast}
+            onChange={(e) => set("contrast", e.target.checked)}
+          />
+          High contrast
         </label>
         <label className="toggle">
           <input

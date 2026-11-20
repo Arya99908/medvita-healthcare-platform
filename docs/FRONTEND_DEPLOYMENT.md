@@ -1,6 +1,6 @@
 # Deploy the MEDVITA frontend prototype
 
-This archive is the complete updated project, not a patch. Extract it and open the `medvita-frontend-prototype` folder as the project root. Keep `package-lock.json` so the tested dependency versions are used.
+This is a guide for the existing MedVita repository, which includes the integrated final frontend prototype and authenticated account routes. Keep `package-lock.json` so the tested dependency versions are used.
 
 ## Requirements
 

@@ -2098,3 +2098,77 @@
 
 /* The demo has equivalent display controls in Settings; avoid duplicating the global account control. */
 body:has(.app) .display-preferences.floating { display: none; }
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  align-items: end;
+  margin: 18px 0;
+}
+.filter-grid label {
+  min-width: 0;
+}
+.voice-tools {
+  margin: 0 0 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.voice-tools p,
+.voice-tools .chip-wrap {
+  margin: 10px 0;
+}
+.record-details {
+  font-size: 11px;
+  margin-top: 8px;
+}
+.record-details p {
+  overflow-wrap: anywhere;
+}
+.wellness-card h3 {
+  margin-top: 12px;
+  font-size: 12px;
+}
+.high-contrast {
+  --text: #061d26;
+  --muted: #273e46;
+  --line: #526771;
+  --teal: #005b4c;
+  --soft: #edf6f3;
+  --surface: #fff;
+  --bg: #fff;
+  color: var(--text);
+}
+.high-contrast.dark {
+  --text: #fff;
+  --muted: #e1efee;
+  --line: #b4d1cd;
+  --teal: #8fffe0;
+  --soft: #17342f;
+  --surface: #071f26;
+  --bg: #03151b;
+}
+.high-contrast button,
+.high-contrast input,
+.high-contrast select,
+.high-contrast textarea {
+  border-width: 2px;
+}
+@media (max-width: 700px) {
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+  .voice-tools .chip-wrap {
+    align-items: stretch;
+  }
+  .voice-tools button {
+    white-space: normal;
+  }
+}
+@media print {
+  .voice-tools {
+    display: none;
+  }
+}

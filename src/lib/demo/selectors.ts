@@ -109,6 +109,27 @@ export function ageLabel(dob: string) {
     ? `${Math.max(0, months)} months`
     : `${Math.floor(months / 12)} years`;
 }
+export function validDate(value: string) {
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    Number.isFinite(Date.parse(value)) &&
+    new Date(value).toISOString().slice(0, 10) === value
+  );
+}
+export function duplicateEvent(entries: Entry[], event: Partial<Entry>) {
+  return (
+    event.category === "event" &&
+    entries.some(
+      (e) =>
+        e.id !== event.id &&
+        e.category === "event" &&
+        e.patient === event.patient &&
+        e.title.trim().toLowerCase() === event.title?.trim().toLowerCase() &&
+        e.date === event.date &&
+        e.time === event.time,
+    )
+  );
+}
 export function validDemoData(value: unknown): value is DemoData {
   if (!value || typeof value !== "object") return false;
   const d = value as DemoData;
@@ -149,7 +170,7 @@ export function validDemoData(value: unknown): value is DemoData {
           "source",
         ].every((k) => typeof e[k] === "string") &&
         Object.values(e).every((v) => typeof v === "string") &&
-        /^\d{4}-\d{2}-\d{2}$/.test(e.date),
+        validDate(e.date),
     ) &&
     !!d.settings &&
     ["language", "theme", "number"].every(

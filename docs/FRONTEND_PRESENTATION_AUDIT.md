@@ -2,7 +2,7 @@
 
 Audit performed against the supplied frontend master specification on 20–21 November 2026. The application’s presentation clock remains fixed to 20 November 2026. Scope is frontend only; no backend development, external messages or real telephone calls were performed.
 
-The feature-by-feature browser sweep below is the audit report included in the supplied ZIP, which tested four profiles. The merged selector also includes a school-age child and adolescent boy. This merged repository was revalidated separately with lint, typecheck, 216 tests, a production build, and a manual Chrome check of the dashboard and a guided journey. The ZIP did not contain the referenced `output/playwright/` evidence files, so the detailed historical browser sweep is not independently reproduced by this merge.
+The feature-by-feature browser sweep below is historical evidence from the supplied ZIP, which tested four profiles and 17 destinations. The final merged repository has six profiles and 22 destinations. Fresh checks for this merge: lint, typecheck, 221 tests across 36 test files, and a production build passed. Current Chrome review checked the complete navigation, six profile options, Medical History, wellness tracking, adolescent-boy view, and high-contrast setting. The ZIP did not contain its referenced `output/playwright/` evidence files, so the detailed historical browser sweep is not independently reproduced here.
 
 ## Verdict
 

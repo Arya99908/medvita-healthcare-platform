@@ -8,7 +8,7 @@ Authenticated requests use the caller's JWT and RLS. No service-role credential 
 Patient access is separately granted for read, record, clinical-write, sensitive-read, and management. Doctor status is verified independently. Sensitive entries require explicit patient-level consent and access; guardianship alone does not grant access. Administrative roles confer no patient-data access.
 
 ## Modules
-Identity and consent; life-stage trackers; prescriptions and administrations; documents and verification; calendar and reminders; wellness; caregiver handovers; clinical workspace; operational administration; emergency card and device-assisted calls; analytics; integrations.
+The synthetic demo exposes 22 destinations: overview, health profile, infant/child/adolescent/adult/senior views, medical history, documents, medication schedules, deterministic AI summaries, wellness, exercise, nutrition, habits, calendar, caregiver management, doctor dashboard, hospital history, emergency assistance, analytics, notifications, and settings. Presentation demo data remains isolated in browser storage; account pages continue to use the existing authenticated backend.
 
 ## Design
 Ink #142E38, teal #087F78, mint #E4F3EE, canvas #F4F7F8, white #FFFFFF, emergency #B84242. System humanist sans for readable operational text; large headings and tabular measurements. Left-aligned content with a fixed narrow navigation, family strip, wide care overview and narrow daily schedule.

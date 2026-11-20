@@ -29,6 +29,7 @@ export type Settings = {
   language: string;
   theme: string;
   large: boolean;
+  contrast?: boolean;
   private: boolean;
   notifications: boolean;
   number: string;
@@ -121,7 +122,7 @@ export const patients: Patient[] = [
     stage: "Adult",
     dob: "1984-06-18",
     blood: "O+ · verified in fictional record",
-    conditions: "Hypertension",
+    conditions: "Hypertension, Type 2 diabetes",
     allergies: "Penicillin (reported)",
     doctor: "Dr. Meera Rao · Internal medicine",
     hospital: "Demo City Hospital, Bengaluru",
@@ -384,7 +385,7 @@ export function seed(): DemoData {
         duration: "60 days",
         refill: "2026-12-15",
       });
-      if (p.id === "elder")
+      if (p.id === "elder" || p.id === "adult")
         add(p.id, "medication", "Metformin", TODAY, {
           strength: "500 mg",
           dosage: "1 tablet",
@@ -526,6 +527,7 @@ export function seed(): DemoData {
       language: "English",
       theme: "Light",
       large: false,
+      contrast: false,
       private: true,
       notifications: true,
       number: "112",

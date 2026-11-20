@@ -1,6 +1,7 @@
 "use client";
+import { validDate, duplicateEvent } from "@/lib/demo/selectors";
 import { useState, type ReactNode } from "react";
-import { ArrowUpRight, Check, Plus, Trash2, Pencil } from "lucide-react";
+import { ArrowUpRight, Check, Plus, Trash2, Pencil, Eye } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import {
   type Entry,
@@ -92,7 +93,7 @@ export function Chart({
           ].includes(e.title)
         : kind === "Medication adherence"
           ? e.category === "administration" && e.status === "Taken"
-          : e.category === "wellness" && e.status === "Completed",
+          : e.category === "wellness-log" && e.status === "Completed",
     );
     rows = [...new Set(source.map((e) => e.date))].sort().map((date) => ({
       id: `${kind}-${date}`,
@@ -220,11 +221,15 @@ export function Chart({
 export function EntryList({
   entries,
   edit,
+  view,
+  canEdit,
   remove,
   limit = 50,
 }: {
   entries: Entry[];
   edit?: (e: Entry) => void;
+  view?: (e: Entry) => void;
+  canEdit?: (e: Entry) => boolean;
   remove?: (e: Entry) => void;
   limit?: number;
 }) {
@@ -244,13 +249,59 @@ export function EntryList({
             </p>
             <small>
               {dateLabel(e.date)} {e.time} · {e.source}
-              {e.private === "true" ? " · Private" : ""}
+              {e.private === "true" ? " · Private" : ""} ·{" "}
+              {e.verification || "Unverified demonstration entry"}
             </small>
+            <details className="record-details">
+              <summary>Record details</summary>
+              <p>
+                Type: {e.type || e.category}. Time: {e.time || "Not recorded"}{" "}
+                (IST).
+              </p>
+              {e.notes && <p>{e.notes}</p>}
+              {[
+                "quantity",
+                "duration",
+                "feeding",
+                "consistency",
+                "colour",
+                "flow",
+                "cycle",
+                "hospital",
+                "start",
+                "end",
+                "refill",
+                "dosage",
+                "frequency",
+                "doctor",
+              ]
+                .filter((k) => e[k])
+                .map((k) => (
+                  <p key={k}>
+                    {k}: {e[k]}
+                  </p>
+                ))}
+              {e.attachment && e.attachment !== "None" && (
+                <p>
+                  Linked document available in Medical Documents; reference{" "}
+                  {e.attachment}.
+                </p>
+              )}
+            </details>
           </div>
           <Badge tone={e.status === "Missed" ? "red" : "grey"}>
             {e.status}
           </Badge>
-          {edit && (
+          {view && (
+            <button
+              className="icon-button"
+              aria-label={`View ${e.title}`}
+              onClick={() => view(e)}
+            >
+              <Eye size={15} />
+            </button>
+          )}
+          {edit && (!canEdit || canEdit(e)) && (
             <button
               className="icon-button"
               aria-label={`Edit ${e.title}`}
@@ -305,6 +356,11 @@ const common: Field[] = [
       "Uploaded document",
     ],
   },
+  {
+    name: "verification",
+    label: "Verification status (demo only)",
+    options: ["Unverified demonstration entry", "Reviewed in demonstration"],
+  },
   { name: "notes", label: "Notes", type: "textarea" },
 ];
 export function fieldsFor(category: string): Field[] {
@@ -347,6 +403,7 @@ export function fieldsFor(category: string): Field[] {
       { name: "time", label: "Start time", type: "time", required: true },
       { name: "end", label: "End time", type: "time", required: true },
       { name: "doctor", label: "Doctor" },
+      { name: "hospital", label: "Hospital / clinic" },
       { name: "caregiver", label: "Assigned caregiver" },
       { name: "location", label: "Location" },
       {
@@ -428,6 +485,7 @@ export function fieldsFor(category: string): Field[] {
     { name: "title", label: "Observation type", options: observationTypes },
     { name: "value", label: "Value or observation", required: true },
     { name: "unit", label: "Unit (where applicable)" },
+    { name: "attachment", label: "Related document" },
     { name: "time", label: "Time", type: "time" },
     {
       name: "severity",
@@ -471,6 +529,7 @@ export function fieldsFor(category: string): Field[] {
   ];
 }
 export function EditForm({
+  existing = [],
   entry,
   patient,
   patients,
@@ -478,6 +537,7 @@ export function EditForm({
   onSave,
   onClose,
 }: {
+  existing?: Entry[];
   entry: Partial<Entry>;
   patient: Patient;
   patients: Patient[];
@@ -522,7 +582,8 @@ export function EditForm({
       title={`${entry.id ? "Edit" : "Add"} ${category}`}
     >
       <p className="muted">
-        Fictional demonstration records only. Changes stay in this browser.
+        Fictional demonstration records only. Changes stay in this browser. All
+        calendar times use Asia/Kolkata (IST, UTC+05:30).
       </p>
       <form
         onSubmit={(e) => {
@@ -549,6 +610,16 @@ export function EditForm({
           ) {
             setError(
               "Enter a valid phone number using digits, spaces, +, parentheses or hyphens.",
+            );
+            return;
+          }
+          if (!validDate(draft.date)) {
+            setError("Choose a valid calendar date.");
+            return;
+          }
+          if (duplicateEvent(existing, { ...draft, category, id: entry.id })) {
+            setError(
+              "This event already exists for this patient at this date and time. Edit the existing event instead.",
             );
             return;
           }

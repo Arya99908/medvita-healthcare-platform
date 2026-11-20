@@ -65,7 +65,6 @@ import {
 import {
   CalendarScreen,
   DocumentsScreen,
-  WellnessScreen,
   SettingsScreen,
   EmergencyScreen,
   ProfileScreen,
@@ -77,6 +76,13 @@ import {
   upcomingEvents,
   validDemoData,
 } from "@/lib/demo/selectors";
+import {
+  EnhancedWellness,
+  HistoryScreen,
+  NotificationScreen,
+  VoiceTools,
+  DemoBoundary,
+} from "./extensions";
 const subscribeViewport = (callback: () => void) => {
   const query = window.matchMedia("(max-width: 700px)");
   query.addEventListener("change", callback);
@@ -89,13 +95,18 @@ const nav = [
   ["Adolescent Health", VenetianMask],
   ["Adult Health", HeartPulse],
   ["Elderly Care", Accessibility],
-  ["Medical Records", FileText],
+  ["Medical History", ClipboardList],
+  ["Medical Documents", FileText],
   ["Medications", Pill],
   ["AI Health Intelligence", Sparkles],
   ["Remedies & Wellness", Leaf],
+  ["Exercise", Activity],
+  ["Food & Nutrition", Leaf],
+  ["Habits & Lifestyle", HeartPulse],
   ["Medical Calendar", CalendarDays],
   ["Caregiver Management", Users],
   ["Doctor Dashboard", Stethoscope],
+  ["Hospital Records", House],
   ["Emergency Assistance", Phone],
   ["Analytics & Reports", ChartNoAxesCombined],
   ["Notifications", Bell],
@@ -108,13 +119,18 @@ const hindi = [
   "किशोर स्वास्थ्य",
   "वयस्क स्वास्थ्य",
   "बुज़ुर्ग देखभाल",
-  "चिकित्सा रिकॉर्ड",
+  "चिकित्सा इतिहास",
+  "चिकित्सा दस्तावेज़",
   "दवाइयाँ",
   "AI स्वास्थ्य जानकारी",
   "स्वास्थ्य और तंदुरुस्ती",
+  "व्यायाम",
+  "भोजन और पोषण",
+  "आदतें और जीवनशैली",
   "चिकित्सा कैलेंडर",
   "देखभालकर्ता प्रबंधन",
   "डॉक्टर डैशबोर्ड",
+  "अस्पताल रिकॉर्ड",
   "आपातकालीन सहायता",
   "विश्लेषण और रिपोर्ट",
   "सूचनाएँ",
@@ -127,13 +143,18 @@ const kannada = [
   "ಹದಿಹರೆಯದ ಆರೋಗ್ಯ",
   "ವಯಸ್ಕರ ಆರೋಗ್ಯ",
   "ಹಿರಿಯರ ಆರೈಕೆ",
+  "ವೈದ್ಯಕೀಯ ಇತಿಹಾಸ",
   "ವೈದ್ಯಕೀಯ ದಾಖಲೆಗಳು",
   "ಔಷಧಿಗಳು",
   "AI ಆರೋಗ್ಯ ಮಾಹಿತಿ",
   "ಕ್ಷೇಮ ಕೇಂದ್ರ",
+  "ವ್ಯಾಯಾಮ",
+  "ಆಹಾರ ಮತ್ತು ಪೋಷಣೆ",
+  "ಅಭ್ಯಾಸಗಳು ಮತ್ತು ಜೀವನಶೈಲಿ",
   "ವೈದ್ಯಕೀಯ ಕ್ಯಾಲೆಂಡರ್",
   "ಆರೈಕೆದಾರ ನಿರ್ವಹಣೆ",
   "ವೈದ್ಯರ ಫಲಕ",
+  "ಆಸ್ಪತ್ರೆ ದಾಖಲೆಗಳು",
   "ತುರ್ತು ನೆರವು",
   "ವಿಶ್ಲೇಷಣೆ ಮತ್ತು ವರದಿ",
   "ಅಧಿಸೂಚನೆಗಳು",
@@ -169,7 +190,9 @@ const journeys = [
     patient: "elder",
     steps: [
       "Elderly Care",
+      "Medical History",
       "Medications",
+      "Hospital Records",
       "Caregiver Management",
       "AI Health Intelligence",
       "Doctor Dashboard",
@@ -181,9 +204,14 @@ const journeys = [
     patient: "elder",
     steps: [
       "Remedies & Wellness",
+      "Exercise",
+      "Food & Nutrition",
+      "Habits & Lifestyle",
       "Medical Calendar",
-      "My Health Profile",
+      "Hospital Records",
       "Emergency Assistance",
+      "Caregiver Management",
+      "Notifications",
     ],
   },
 ];
@@ -218,6 +246,25 @@ export default function Medvita() {
       const saved = localStorage.getItem(storageKey);
       const parsed = saved ? JSON.parse(saved) : null;
       initial = validDemoData(parsed) ? parsed : seed();
+      const legacy = initial.entries.filter(
+        (e) =>
+          e.category === "wellness" &&
+          e.status === "Completed" &&
+          !initial.entries.some(
+            (l) =>
+              l.category === "wellness-log" &&
+              l.patient === e.patient &&
+              l.title === e.title,
+          ),
+      );
+      initial.entries = [
+        ...initial.entries,
+        ...legacy.map((e) => ({
+          ...e,
+          id: `migrated-${e.id}`,
+          category: "wellness-log",
+        })),
+      ];
       if (saved && !validDemoData(parsed))
         queueMicrotask(() =>
           setToast(
@@ -240,7 +287,8 @@ export default function Medvita() {
     });
     const readHash = () => {
       try {
-        return decodeURIComponent(location.hash.slice(1));
+        const hash = decodeURIComponent(location.hash.slice(1));
+        return hash === "Medical Records" ? "Medical Documents" : hash;
       } catch {
         return "Overview";
       }
@@ -298,9 +346,7 @@ export default function Medvita() {
       </div>
     );
   const p =
-    data.patients.find((p) => p.id === data.selected) || data.patients.at(-1)!;
-  const isChild = isChildProfile(p.id);
-  const isTeen = isTeenProfile(p.id);
+    data.patients.find((p) => p.id === data.selected) || data.patients[3];
   const all = data.entries.filter((e) => e.patient === p.id);
   const shared = all.filter((e) => !isPrivate(e));
   const analyticsEntries = shared.filter((e) => inRange(e, range));
@@ -346,18 +392,26 @@ export default function Medvita() {
       let next = services.save(d, entry);
       if (
         d.settings.notifications &&
-        ["medication", "event", "document", "task"].includes(entry.category)
+        [
+          "medication",
+          "event",
+          "document",
+          "task",
+          "administration",
+          "wellness",
+          "wellness-log",
+        ].includes(entry.category)
       ) {
         next = services.save(next, {
           id: `notice-${entry.id}`,
           patient: entry.patient,
           category: "notification",
-          title: `${entry.category === "event" ? "Calendar reminder" : entry.category === "medication" ? "Medication reminder" : entry.category === "document" ? "Document uploaded" : "Care task updated"}: ${entry.title}`,
+          title: `${entry.status === "Missed" ? "Missed " : ""}${entry.category === "event" ? "Calendar reminder" : entry.category === "medication" ? "Medication reminder" : entry.category === "document" ? "Document uploaded" : entry.category === "administration" ? "Medication administration" : entry.category.startsWith("wellness") ? "Wellness reminder" : "Care task updated"}: ${entry.title}`,
           date: TODAY,
           status: "Unread",
           source: "Demonstration data",
-          type: entry.category,
-          notes: `${entry.date} ${entry.time || ""}. Simulated in-app notification; no message sent.`,
+          type: entry.type || entry.category,
+          notes: `${entry.status} · ${entry.date} ${entry.time || ""}. Simulated in-app notification; no message sent.`,
         });
       }
       return next;
@@ -387,7 +441,10 @@ export default function Medvita() {
   };
   const latest = (kind: string) =>
     all
-      .filter((e) => e.category === "observation" && e.title === kind && e.date<=TODAY)
+      .filter(
+        (e) =>
+          e.category === "observation" && e.title === kind && e.date <= TODAY,
+      )
       .sort((a, b) => b.date.localeCompare(a.date))[0];
   const generate = (q: string) => {
     const token = ++generation.current;
@@ -571,7 +628,7 @@ export default function Medvita() {
   const chartPanel = (kind = chartKind) => (
     <Panel
       title={
-        kind === "Weight" && isChild
+        kind === "Weight" && isChildProfile(p.id)
           ? "Growth observations"
           : `${kind} trend`
       }
@@ -669,7 +726,7 @@ export default function Medvita() {
             ? ["Weight", "Feeding", "Sleep", "Height"]
             : p.id === "child-school"
               ? ["Weight", "Height", "Sleep", "Physical activity"]
-              : isTeen
+              : isTeenProfile(p.id)
               ? p.id === "teen-boy"
                 ? ["Sleep", "Physical activity", "Hydration", "Emotional wellbeing"]
                 : ["Sleep", "Physical activity", "Hydration", "Menstrual cycle"]
@@ -707,9 +764,9 @@ export default function Medvita() {
         <div className="dashboard-grid">
           <div className="stack">
             {chartPanel(
-              isChild
+              isChildProfile(p.id)
                 ? "Weight"
-                : isTeen
+                : isTeenProfile(p.id)
                   ? "Sleep"
                   : "Blood pressure",
             )}
@@ -884,14 +941,14 @@ export default function Medvita() {
   ) {
     const target =
       section === "Child Health"
-        ? isChild ? p.id : "child"
+        ? isChildProfile(p.id) ? p.id : "child"
         : section === "Adolescent Health"
-          ? isTeen ? p.id : "teen"
+          ? isTeenProfile(p.id) ? p.id : "teen"
           : section === "Adult Health"
             ? "adult"
             : "elder";
     const kinds =
-      isChildProfile(target)
+      target === "child"
         ? [
             "Feeding",
             "Bowel movement",
@@ -905,9 +962,11 @@ export default function Medvita() {
             "Vaccination",
             "Milestone",
           ]
+        : target === "child-school"
+          ? ["Symptom", "Sleep", "Weight", "Height", "Physical activity", "Vaccination", "Milestone"]
         : isTeenProfile(target)
           ? [
-              ...(target === "teen" ? ["Menstrual cycle"] : ["Puberty questions"]),
+              "Menstrual cycle",
               "Private journal",
               "Skin & acne",
               "Hygiene",
@@ -955,14 +1014,17 @@ export default function Medvita() {
               <div className="privacy-banner">
                 <ShieldCheck size={20} />
                 <span>
-                  Private personal view. Journal and menstrual entries are
+                  Private personal view. Sensitive wellbeing and menstrual entries are
                   excluded from doctor, caregiver and shared AI views. This is a
                   local privacy simulation, not account security.
                 </span>
               </div>
             )}
             <div className="tabs">
-              {["Female wellness", "Male wellness", "Everyday wellbeing"].map(
+              {(target === "teen-boy"
+                ? ["Male wellness", "Everyday wellbeing"]
+                : ["Female wellness", "Everyday wellbeing"]
+              ).map(
                 (t) => (
                   <button
                     key={t}
@@ -1068,7 +1130,9 @@ export default function Medvita() {
               target === "elder"
                 ? "Care today"
                 : isChildProfile(target)
-                  ? "Growing, one day at a time"
+                  ? target === "child"
+                    ? "Growing, one day at a time"
+                    : "Healthy routines for school and play"
                   : "Your next healthy step"
             }
           >
@@ -1076,7 +1140,9 @@ export default function Medvita() {
               {target === "elder"
                 ? `${p.conditions}. Coordinate medicines, observations and daily care with your family.`
                 : isChildProfile(target)
-                  ? "Bring feeding, diaper and growth observations together for the next paediatric visit. These measurements are not growth percentile assessments."
+                  ? target === "child"
+                    ? "Bring feeding, diaper and growth observations together for the next paediatric visit. These measurements are not growth percentile assessments."
+                    : "Bring school, activity, sleep and growth observations to the next paediatric visit. These measurements are not growth percentile assessments."
                   : "Record how you feel, keep a regular routine and bring questions to your next appointment."}
             </p>
             <div className="stack compact">
@@ -1190,7 +1256,19 @@ export default function Medvita() {
         remove={setRemove}
       />
     );
-  else if (section === "Medical Records")
+  else if (["Medical History", "Hospital Records"].includes(section))
+    content = (
+      <HistoryScreen
+        key={`${p.id}-${section}`}
+        hospital={section === "Hospital Records"}
+        entries={entries}
+        documents={all.filter((e) => e.category === "document")}
+        add={add}
+        edit={setEditing}
+        remove={setRemove}
+      />
+    );
+  else if (section === "Medical Documents")
     content = (
       <DocumentsScreen
         key={p.id}
@@ -1202,10 +1280,19 @@ export default function Medvita() {
         toast={setToast}
       />
     );
-  else if (section === "Remedies & Wellness")
+  else if (
+    [
+      "Remedies & Wellness",
+      "Exercise",
+      "Food & Nutrition",
+      "Habits & Lifestyle",
+    ].includes(section)
+  )
     content = (
-      <WellnessScreen
-        key={p.id}
+      <EnhancedWellness
+        key={`${p.id}-${section}`}
+        section={section}
+        remove={setRemove}
         patient={p}
         patients={data.patients}
         select={switchPatient}
@@ -1384,7 +1471,14 @@ export default function Medvita() {
                     .filter((e) => e.title === "Clinical note")
                     .map((e) => e.value)
                     .join("; ") || "Bring records to the next review."
-                }\nAppointments: ${events.map((e) => `${e.date} ${e.title}`).join("; ")}\nPending tasks: ${shared
+                }\nAppointments: ${events.map((e) => `${e.date} ${e.title}`).join("; ")}\nPending investigations: ${
+                  events
+                    .filter((e) =>
+                      ["Laboratory test", "Imaging test"].includes(e.type),
+                    )
+                    .map((e) => `${e.date}: ${e.title}`)
+                    .join("; ") || "None recorded"
+                }\nPending tasks: ${shared
                   .filter(
                     (e) => e.category === "task" && e.status === "Pending",
                   )
@@ -1514,15 +1608,15 @@ export default function Medvita() {
               >
                 AI consultation report
               </button>
-              <button onClick={() => go("Medical Records")}>
+              <button onClick={() => go("Medical Documents")}>
                 Preview documents
               </button>
             </div>
           </Panel>
           {chartPanel(
-            isChild
+            isChildProfile(p.id)
               ? "Weight"
-              : isTeen
+              : isTeenProfile(p.id)
                 ? "Sleep"
                 : "Blood pressure",
           )}
@@ -1557,6 +1651,7 @@ export default function Medvita() {
                 "Weight",
                 "Sleep",
                 "Physical activity",
+                "Walking",
                 "Feeding",
                 "Height",
                 "Head circumference",
@@ -1613,7 +1708,8 @@ export default function Medvita() {
             <strong className="big-number">
               {
                 analyticsEntries.filter(
-                  (e) => e.category === "wellness" && e.status === "Completed",
+                  (e) =>
+                    e.category === "wellness-log" && e.status === "Completed",
                 ).length
               }
             </strong>
@@ -1675,52 +1771,22 @@ export default function Medvita() {
     );
   else if (section === "Notifications")
     content = (
-      <Panel
-        title="Your notifications"
-        subtitle="Simulated alerts · no messages are sent"
-        action={
-          <button
-            onClick={() => {
-              setData({
-                ...data,
-                entries: data.entries.map((e) =>
-                  e.patient === p.id && e.category === "notification"
-                    ? { ...e, status: "Read" }
-                    : e,
-                ),
-              });
-              setToast("All notifications marked as read.");
-            }}
-          >
-            Mark all as read
-          </button>
-        }
-      >
-        {by("notification").map((e) => (
-          <div className="entry-row" key={e.id}>
-            <span className="medicine-icon">
-              <Bell size={18} />
-            </span>
-            <div className="grow">
-              <strong>{e.title}</strong>
-              <p>{e.notes}</p>
-              <small>
-                {e.type} · {dateLabel(e.date)}
-              </small>
-            </div>
-            <button
-              onClick={() =>
-                patch(e, { status: e.status === "Unread" ? "Read" : "Unread" })
-              }
-            >
-              {e.status === "Unread" ? "Mark as read" : "Mark unread"}
-            </button>
-            <Badge tone={e.status === "Unread" ? "green" : "grey"}>
-              {e.status}
-            </Badge>
-          </div>
-        ))}
-      </Panel>
+      <NotificationScreen
+        key={p.id}
+        entries={by("notification")}
+        patch={patch}
+        markAll={() => {
+          setData({
+            ...data,
+            entries: data.entries.map((e) =>
+              e.patient === p.id && e.category === "notification"
+                ? { ...e, status: "Read" }
+                : e,
+            ),
+          });
+          setToast("All notifications marked as read.");
+        }}
+      />
     );
   else
     content = (
@@ -1757,7 +1823,7 @@ export default function Medvita() {
     );
   return (
     <div
-      className={`app ${data.settings.theme === "Dark" ? "dark" : ""} ${data.settings.large ? "large-text" : ""} ${data.settings.presentation ? "presentation" : ""}`}
+      className={`app ${data.settings.theme === "Dark" ? "dark" : ""} ${data.settings.large ? "large-text" : ""} ${data.settings.contrast ? "high-contrast" : ""} ${data.settings.presentation ? "presentation" : ""}`}
     >
       <a href="#main-content" className="skip-link">
         Skip to content
@@ -1777,7 +1843,7 @@ export default function Medvita() {
           <nav aria-label="Main navigation">
             {nav.map(([name, Icon], i) => (
               <div key={name}>
-                {[0, 2, 6, 11, 14].includes(i) && (
+                {[0, 2, 6, 15, 19].includes(i) && (
                   <div className="nav-heading">
                     {i === 0
                       ? "Your workspace"
@@ -1785,7 +1851,7 @@ export default function Medvita() {
                         ? "Care through every stage"
                         : i === 6
                           ? "Connected health"
-                          : i === 11
+                          : i === 15
                             ? "Your care network"
                             : "Workspace tools"}
                   </div>
@@ -1794,6 +1860,13 @@ export default function Medvita() {
                   className={`nav-item ${section === name ? "active" : ""}`}
                   onClick={() => go(name)}
                   aria-current={section === name ? "page" : undefined}
+                  aria-label={
+                    data.settings.language === "Hindi"
+                      ? hindi[i]
+                      : data.settings.language === "Kannada"
+                        ? kannada[i]
+                        : name
+                  }
                 >
                   <Icon size={18} />
                   <span>
@@ -1900,7 +1973,7 @@ export default function Medvita() {
                             go("Medications");
                           else if (e.category === "notification")
                             go("Notifications");
-                          else if (e.category === "wellness")
+                          else if (e.category.startsWith("wellness"))
                             go("Remedies & Wellness");
                           else setEditing(e);
                           setSearch("");
@@ -2040,7 +2113,13 @@ export default function Medvita() {
               </button>
             </div>
           )}
-          {content}
+          <DemoBoundary key={`${p.id}-${section}`}>
+            <VoiceTools
+              text={`${section}. ${p.name}. ${p.age}. ${p.conditions}. Fictional demonstration profile.`}
+              onTranscript={setSearch}
+            />
+            {content}
+          </DemoBoundary>
           <footer className="page-footer">
             <span>
               <HeartPulse size={15} />
@@ -2052,6 +2131,7 @@ export default function Medvita() {
       </div>
       {editing && (
         <EditForm
+          existing={data.entries}
           key={
             editing.id || `${editing.category}-${editing.title}-${editing.date}`
           }
