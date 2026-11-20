@@ -1656,6 +1656,47 @@ export type Database = {
         }
         Relationships: []
       }
+      patient_activity_events: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          id: string
+          occurred_at: string
+          patient_id: string
+          resource_id: string | null
+          resource_type: string
+          visibility: string
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          id?: string
+          occurred_at?: string
+          patient_id: string
+          resource_id?: string | null
+          resource_type: string
+          visibility?: string
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          id?: string
+          occurred_at?: string
+          patient_id?: string
+          resource_id?: string | null
+          resource_type?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_activity_events_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_relationships: {
         Row: {
           can_read: boolean

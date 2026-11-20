@@ -45,6 +45,9 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   const { data: symptoms, error: symptomsError } = canRead
     ? await supabase.from("symptom_observations").select("id,symptom,severity,notes,observed_at,visibility").eq("patient_id", patientId).order("observed_at", { ascending: false })
     : { data: [], error: null };
+  const { data: activityEvents, error: activityError } = canRead
+    ? await supabase.from("patient_activity_events").select("id,actor_user_id,action,resource_type,occurred_at").eq("patient_id", patientId).order("occurred_at", { ascending: false }).limit(50)
+    : { data: [], error: null };
   const isChildStage = ["infant", "child"].includes(profile.life_stage);
   const isAdultStage = ["adult", "senior"].includes(profile.life_stage);
   const isAdolescentStage = profile.life_stage === "adolescent";
@@ -191,6 +194,20 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
         {eventsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Timeline could not be loaded</strong><span>Reload the page or sign in again.</span></div>
           : events?.length ? <div className="timeline-event-list">{events.map((event) => <article key={event.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{event.event_type.replaceAll("_", " ")}</span><LocalDateTime value={event.occurred_at} /></div><h3>{event.title}</h3>{event.description && <p>{event.description}</p>}<span className={`timeline-verification ${event.verification_status}`}>{event.verification_status === "verified" ? "Verified" : event.verification_status === "rejected" ? "Rejected" : "Unverified entry"}</span></article>)}</div>
             : <div className="account-empty-state"><Clock3 size={22} /><strong>No timeline entries</strong><span>When you add a note, it will appear here for people allowed to view it.</span></div>}
+      </section>}
+      {canRead && <section className="account-card" aria-labelledby="activity-title"><div className="account-card-heading"><div><span className="micro-label">CARE TEAM ACTIVITY</span><h2 id="activity-title">Recent activity</h2><p>Shows who changed a record and when. It does not copy notes or health details into this list.</p></div><span className="account-card-icon"><Activity size={18} /></span></div>
+        {activityError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Activity could not be loaded</strong><span>Reload the page or sign in again.</span></div>
+          : activityEvents?.length ? <div className="timeline-event-list">{activityEvents.map((event) => {
+            const actionLabels: Record<string, string> = {
+              care_task_created: "Created a care task", care_task_completed: "Completed a care task", care_task_missed: "Marked a care task missed", care_task_cancelled: "Cancelled a care task", care_task_reopened: "Reopened a care task", dose_event_recorded: "Recorded a medicine event", handover_recorded: "Saved a caregiver handover", appointment_status_changed: "Changed an appointment status", record_added: "Added a record", record_updated: "Updated a record", record_removed: "Removed a record",
+            };
+            const resourceLabels: Record<string, string> = {
+              health_events: "timeline note", symptom_observations: "observation", medical_conditions: "condition note", allergies: "allergy record", vitals: "measurement", feeding_records: "feeding log", bowel_movement_records: "bowel log", vomiting_records: "care log", growth_records: "growth measurement", urination_records: "urination log", sleep_records: "sleep log", vaccination_records: "vaccination record", developmental_milestones: "development observation", menstrual_records: "private cycle record", medication_records: "medicine note", medication_schedules: "medicine schedule", medication_administration_logs: "medicine event", medical_documents: "document", appointments: "appointment", caregiver_tasks: "care task", caregiver_handover_records: "handover", wellness_plans: "wellness plan", wellness_records: "wellness record", emergency_alerts: "emergency log",
+            };
+            const actorLabel = event.actor_user_id === user.id ? "You" : event.actor_user_id ? `Linked account ending ${event.actor_user_id.slice(-4)}` : "A linked account";
+            return <article key={event.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{actionLabels[event.action] ?? event.action.replaceAll("_", " ")} · {resourceLabels[event.resource_type] ?? "profile record"}</span><span className="timeline-verification">{actorLabel}</span></div><LocalDateTime value={event.occurred_at} /></article>;
+          })}</div>
+            : <div className="account-empty-state"><Activity size={22} /><strong>No activity recorded yet</strong><span>New care-record changes will appear here for authorised readers.</span></div>}
       </section>}
     </div>
   </main>;
