@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverTask, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, logMedicationAdministration, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverTask, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, logMedicationAdministration, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -29,6 +29,11 @@ function updateQuery(result: unknown) {
     select: vi.fn(() => chain),
     maybeSingle: vi.fn().mockResolvedValue(result),
   };
+  return chain;
+}
+
+function deleteQuery(result: unknown) {
+  const chain = { delete: vi.fn(() => chain), eq: vi.fn(() => chain), select: vi.fn(() => chain), maybeSingle: vi.fn().mockResolvedValue(result) };
   return chain;
 }
 
@@ -667,6 +672,34 @@ describe("appointment server action", () => {
     expect(result.status).toBe("success");
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, event_type: "laboratory_test", title: "Fictional blood test", notes: "Fictional note", source: "caregiver" }));
   });
+
+  it("updates a profile event using the browser timezone and invalidates the calendar", async () => {
+    const update = updateQuery({ data: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : update);
+    const result = await updateAppointment(patientId, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", { status: "idle", message: "" }, appointmentForm({ title: "Changed visit", startsAt: "2026-11-21T09:00", startsAtOffset: "-330" }));
+    expect(result).toEqual({ status: "success", message: "Appointment updated." });
+    expect(update.update).toHaveBeenCalledWith(expect.objectContaining({ title: "Changed visit", starts_at: "2026-11-21T03:30:00.000Z" }));
+    expect(update.eq).toHaveBeenCalledWith("patient_id", patientId);
+    expect(revalidatePath).toHaveBeenCalledWith("/account/calendar");
+  });
+
+  it("removes an event only for a writable profile relationship", async () => {
+    const removal = deleteQuery({ data: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : removal);
+    const result = await deleteAppointment(patientId, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", { status: "idle", message: "" }, new FormData());
+    expect(result).toEqual({ status: "success", message: "Appointment removed." });
+    expect(removal.delete).toHaveBeenCalled();
+    expect(removal.eq).toHaveBeenCalledWith("patient_id", patientId);
+    expect(revalidatePath).toHaveBeenCalledWith("/account/calendar");
+  });
+
+  it("rejects removal without active write access", async () => {
+    mockSupabase.from.mockImplementation(() => query({ data: { status: "active", can_read: true, can_write: false }, error: null }));
+    const result = await deleteAppointment(patientId, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", { status: "idle", message: "" }, new FormData());
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/active write access/i);
+    expect(mockSupabase.from).not.toHaveBeenCalledWith("appointments");
+  });
 });
 
 describe("medication server action", () => {
@@ -844,6 +877,7 @@ describe("appointment status server action", () => {
     expect(update.eq).toHaveBeenCalledWith("id", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
     expect(update.eq).toHaveBeenCalledWith("patient_id", patientId);
     expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+    expect(revalidatePath).toHaveBeenCalledWith("/account/calendar");
   });
 
   it("does not change appointment status without active write access", async () => {

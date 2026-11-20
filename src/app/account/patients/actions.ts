@@ -701,6 +701,47 @@ export async function createCalendarAppointment(_previous: AppointmentFormState,
   return createAppointment(patientId, _previous, formData);
 }
 
+export async function updateAppointment(patientId: string, appointmentId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {
+  const parsed = appointmentSchema.safeParse({
+    patientId, eventType: formData.get("eventType"), title: formData.get("title"),
+    startsAt: formData.get("startsAt"), startsAtOffset: formData.get("startsAtOffset") ?? "0",
+    endsAt: formData.get("endsAt") ?? "", endsAtOffset: formData.get("endsAtOffset") ?? "0",
+    location: formData.get("location") ?? "", notes: formData.get("notes") ?? "",
+  });
+  if (!parsed.success || !z.string().uuid().safeParse(appointmentId).success) return { status: "error", message: parsed.success ? "Choose a valid appointment." : parsed.error.issues[0]?.message ?? "Check the appointment details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before editing this appointment." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You do not have active write access to this profile." };
+  const { data, error } = await supabase.from("appointments").update({
+    event_type: parsed.data.eventType, title: parsed.data.title,
+    starts_at: new Date(localDateTimeToUtc(parsed.data.startsAt, parsed.data.startsAtOffset)).toISOString(),
+    ends_at: parsed.data.endsAt ? new Date(localDateTimeToUtc(parsed.data.endsAt, parsed.data.endsAtOffset)).toISOString() : null,
+    location: parsed.data.location || null, notes: parsed.data.notes || null,
+  }).eq("id", appointmentId).eq("patient_id", patientId).select("id").maybeSingle();
+  if (error || !data) return { status: "error", message: "This appointment could not be updated. Check your access and try again." };
+  revalidatePath("/account/calendar");
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Appointment updated." };
+}
+
+export async function deleteAppointment(patientId: string, appointmentId: string, _previous: AppointmentFormState, _formData: FormData): Promise<AppointmentFormState> {
+  void _previous;
+  void _formData;
+  if (!z.string().uuid().safeParse(patientId).success || !z.string().uuid().safeParse(appointmentId).success) return { status: "error", message: "Choose a valid appointment." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before removing this appointment." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You do not have active write access to this profile." };
+  const { data, error } = await supabase.from("appointments").delete().eq("id", appointmentId).eq("patient_id", patientId).select("id").maybeSingle();
+  if (error || !data) return { status: "error", message: "This appointment could not be removed. Check your access and try again." };
+  revalidatePath("/account/calendar");
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Appointment removed." };
+}
+
 export async function createMedication(patientId: string, _previous: MedicationFormState, formData: FormData): Promise<MedicationFormState> {
   const parsed = medicationSchema.safeParse({
     patientId,
@@ -863,6 +904,7 @@ export async function updateAppointmentStatus(patientId: string, _previous: Appo
   if (error || !data) return { status: "error", message: "This appointment plan could not be updated. Check your access and try again." };
 
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  revalidatePath("/account/calendar");
   const message = parsed.data.status === "cancelled" ? "Plan marked canceled in this profile." : parsed.data.status === "completed" ? "Plan marked complete in this profile." : "Plan returned to the scheduled list.";
   return { status: "success", message };
 }

@@ -4,6 +4,7 @@ import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Download, ShieldChe
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "../actions";
 import AppointmentStatusForm from "../patients/appointment-status-form";
+import { AppointmentDeleteForm, AppointmentEditForm } from "./appointment-actions";
 import CalendarAppointmentForm from "./calendar-appointment-form";
 import LocalDateTime from "@/components/local-date-time";
 
@@ -42,7 +43,7 @@ function shiftedDate(date: Date, view: CalendarView, direction: -1 | 1) {
 function EventCard({ event, patientName, canWrite }: { event: CalendarEvent; patientName: string; canWrite: boolean }) {
   return <article className="calendar-event-card">
     <div className="calendar-event-time"><LocalDateTime value={event.starts_at} />{event.ends_at && <><span>to</span><LocalDateTime value={event.ends_at} /></>}</div>
-    <div className="calendar-event-copy"><span className="micro-label">{event.event_type.replaceAll("_", " ")} · {event.status}</span><h3>{event.title}</h3><p>{patientName}{event.location ? ` · ${event.location}` : ""}</p>{event.notes && <p className="calendar-event-notes">{event.notes}</p>}<Link className="account-record-link" href={`/account/patients/${event.patient_id}`}>Open profile timeline</Link>{canWrite && <AppointmentStatusForm patientId={event.patient_id} appointmentId={event.id} status={event.status} />}</div>
+    <div className="calendar-event-copy"><span className="micro-label">{event.event_type.replaceAll("_", " ")} · {event.status}</span><h3>{event.title}</h3><p>{patientName}{event.location ? ` · ${event.location}` : ""}</p>{event.notes && <p className="calendar-event-notes">{event.notes}</p>}<Link className="account-record-link" href={`/account/patients/${event.patient_id}`}>Open profile timeline</Link>{canWrite && <><AppointmentStatusForm patientId={event.patient_id} appointmentId={event.id} status={event.status} /><div className="calendar-event-actions"><AppointmentEditForm patientId={event.patient_id} appointment={event} /><AppointmentDeleteForm patientId={event.patient_id} appointmentId={event.id} /></div></>}</div>
   </article>;
 }
 
