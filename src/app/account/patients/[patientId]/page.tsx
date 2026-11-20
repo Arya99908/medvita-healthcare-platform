@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { notFound, redirect } from "next/navigation";
 import { Activity, ArrowLeft, Bell, CalendarDays, ClipboardList, Clock3, FileText, Heart, Pill, ShieldCheck, ChartNoAxesCombined } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
@@ -15,7 +14,7 @@ import PatientEmergencyPanel from "../patient-emergency-panel";
 import CaregiverHandoverPanel from "../caregiver-handover-panel";
 import InvitationPanel from "../../invitations/invitation-panel";
 import DocumentForm from "../document-form";
-import DocumentOCR from "../document-ocr";
+import DocumentLibrary from "../document-library";
 import SymptomForm from "../symptom-form";
 import ChildCareForms from "../child-care-forms";
 import VitalForm from "../vital-form";
@@ -173,8 +172,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       {!canRead && <div className="account-empty-state timeline-access-state"><Clock3 size={22} /><strong>Access is not active</strong><span>This profile has no active record permission for your account. A pending guardian request does not grant access.</span></div>}
       {canRead && <section className="account-card" aria-labelledby="documents-title"><div className="account-card-heading"><div><span className="micro-label">PRIVATE FILES</span><h2 id="documents-title">Documents</h2><p>Files remain private. Download links expire after five minutes.</p></div><span className="account-card-icon"><FileText size={18} /></span></div>
         {documentsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Documents could not be loaded</strong><span>Reload the page or sign in again.</span></div>
-          : documentsWithLinks.length ? <div className="timeline-event-list">{documentsWithLinks.map((document) => <article key={document.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{document.document_type.replaceAll("_", " ")}</span><span className="timeline-verification">{document.verification_status === "verified" ? "Verified" : "Unverified file"}</span></div><h3>{document.display_name}</h3>{document.document_date && <p>Document date: {document.document_date}</p>}{document.downloadUrl ? <a className="account-record-link" href={document.downloadUrl} rel="noreferrer">Download file</a> : <p>Download is unavailable; reload the page to try again.</p>}<details className="document-preview"><summary>Preview original document</summary>{document.previewUrl ? document.mimeType === "application/pdf" ? <iframe src={document.previewUrl} title={`Preview of ${document.display_name}`} loading="lazy" /> : <Image src={document.previewUrl} alt={`Preview of ${document.display_name}`} width={1200} height={900} unoptimized style={{ width: "100%", height: "auto", maxHeight: 650, objectFit: "contain" }} /> : <p>Preview is unavailable. Reload the page to create a new private link.</p>}</details><DocumentOCR patientId={patientId} documentId={document.id} documentName={document.display_name} mimeType={document.mimeType} downloadUrl={document.downloadUrl} canWrite={Boolean(canWrite)} extractions={document.extractions ?? []} /></article>)}</div>
-            : <div className="account-empty-state"><FileText size={22} /><strong>No documents saved</strong><span>Only fictional files should be used in this prototype.</span></div>}
+          : <DocumentLibrary patientId={patientId} documents={documentsWithLinks} canWrite={Boolean(canWrite)} />}
         {documentExtractionsError && <p className="account-form-message error" role="status">Saved OCR review items could not be loaded.</p>}
       </section>}
       {canRead && <section className="account-card" aria-labelledby="symptoms-title"><div className="account-card-heading"><div><span className="micro-label">SYMPTOM LOG</span><h2 id="symptoms-title">Observations</h2><p>Self-reported entries; severity is not a clinical assessment.</p></div><span className="account-card-icon"><Activity size={18} /></span></div>
