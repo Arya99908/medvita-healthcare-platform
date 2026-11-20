@@ -50,7 +50,7 @@ No environment variables, Supabase setup, database migrations, AI keys, OCR keys
 1. Open Settings and reset demo data if necessary.
 2. Enable Presentation mode.
 3. Open “Explore the guided demo” in the sidebar.
-4. Select one of the five journeys or switch among the four fictional patient profiles.
+4. Select one of the five journeys or switch among the six fictional patient profiles.
 
 The demo date is fixed to 20 November 2026. AI/OCR, alerts and caregiver services are clearly labeled simulations. Ambulance actions open a dialler; they do not dispatch an ambulance.
 

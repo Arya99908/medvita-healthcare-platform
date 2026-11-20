@@ -11,7 +11,7 @@ export const sensitiveTitles = new Set([
 export function isPrivate(e: Entry) {
   return (
     e.private === "true" ||
-    (e.patient === "teen" && sensitiveTitles.has(e.title))
+    (["teen", "teen-boy"].includes(e.patient) && sensitiveTitles.has(e.title))
   );
 }
 export function inRange(e: Entry, days: number, until = TODAY) {
@@ -114,8 +114,8 @@ export function validDemoData(value: unknown): value is DemoData {
   const d = value as DemoData;
   return (
     Array.isArray(d.patients) &&
-    d.patients.length === 4 &&
-    ["child", "teen", "adult", "elder"].every((id) =>
+    d.patients.length === 6 &&
+    ["child", "child-school", "teen", "teen-boy", "adult", "elder"].every((id) =>
       d.patients.some((p) => p.id === id),
     ) &&
     d.patients.every((p) =>

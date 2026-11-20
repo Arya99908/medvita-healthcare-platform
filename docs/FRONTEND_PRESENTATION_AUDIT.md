@@ -2,7 +2,7 @@
 
 Audit performed against the supplied frontend master specification on 20–21 November 2026. The application’s presentation clock remains fixed to 20 November 2026. Scope is frontend only; no backend development, external messages or real telephone calls were performed.
 
-The feature-by-feature browser sweep below is the audit report included in the supplied ZIP. This merged repository was revalidated separately with lint, typecheck, 216 tests, a production build, and a manual Chrome check of the dashboard and a guided journey. The ZIP did not contain the referenced `output/playwright/` evidence files, so the detailed historical browser sweep is not independently reproduced by this merge.
+The feature-by-feature browser sweep below is the audit report included in the supplied ZIP, which tested four profiles. The merged selector also includes a school-age child and adolescent boy. This merged repository was revalidated separately with lint, typecheck, 216 tests, a production build, and a manual Chrome check of the dashboard and a guided journey. The ZIP did not contain the referenced `output/playwright/` evidence files, so the detailed historical browser sweep is not independently reproduced by this merge.
 
 ## Verdict
 
@@ -13,7 +13,7 @@ Ready for a live **frontend demonstration in the tested Chromium environment**, 
 | Status | Feature | Verified behavior |
 | --- | --- | --- |
 | Complete for demo | Application shell and navigation | All 17 modules, global search, clear/escape behavior, history navigation, malformed hash recovery, mobile drawer and keyboard access. |
-| Complete for demo | Four patient profiles | Child, adolescent, adult and elderly context; header and Settings switching; edited profile persistence; age calculation and date validation. |
+| Complete for demo | Six patient profiles | Infant, school-age child, adolescent girl, adolescent boy, adult and elderly context; header and Settings switching; edited profile persistence; age calculation and date validation. |
 | Complete for demo | Child health | Feeding, stools, vomiting, hydration, sleep, temperature, growth, milestones and vaccination observations; conditional form fields and source attribution. |
 | Complete for demo | Adolescent health | All tabs, cycle dates/duration/flow, sensitive records, educational panels; private entries excluded from shared care/doctor reports. |
 | Complete for demo | Adult health | Vitals, lifestyle, preventive-care records, prescriptions and patient-specific trends. |

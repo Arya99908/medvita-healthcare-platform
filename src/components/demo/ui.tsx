@@ -616,7 +616,7 @@ export function EditForm({
             source: draft.source,
             private:
               ["Private journal", "Menstrual cycle"].includes(draft.title) ||
-              (draft.patient === "teen" && sensitiveTitles.has(draft.title))
+              (["teen", "teen-boy"].includes(draft.patient) && sensitiveTitles.has(draft.title))
                 ? "true"
                 : draft.private || "false",
           });

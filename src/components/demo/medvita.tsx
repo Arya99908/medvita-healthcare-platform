@@ -42,6 +42,8 @@ import { Dialog } from "@/components/ui/dialog";
 import {
   type DemoData,
   type Entry,
+  isChildProfile,
+  isTeenProfile,
   seed,
   services,
   storageKey,
@@ -228,12 +230,13 @@ export default function Medvita() {
     queueMicrotask(() => {
       setData(initial);
       setChartKind(
-        initial.selected === "child"
+        isChildProfile(initial.selected)
           ? "Weight"
-          : initial.selected === "teen"
+          : isTeenProfile(initial.selected)
             ? "Sleep"
             : "Blood pressure",
       );
+      setAdolescentTab(initial.selected === "teen-boy" ? "Male wellness" : "Female wellness");
     });
     const readHash = () => {
       try {
@@ -295,7 +298,9 @@ export default function Medvita() {
       </div>
     );
   const p =
-    data.patients.find((p) => p.id === data.selected) || data.patients[3];
+    data.patients.find((p) => p.id === data.selected) || data.patients.at(-1)!;
+  const isChild = isChildProfile(p.id);
+  const isTeen = isTeenProfile(p.id);
   const all = data.entries.filter((e) => e.patient === p.id);
   const shared = all.filter((e) => !isPrivate(e));
   const analyticsEntries = shared.filter((e) => inRange(e, range));
@@ -376,8 +381,9 @@ export default function Medvita() {
     setSearchOpen(false);
     setSearch("");
     setChartKind(
-      id === "child" ? "Weight" : id === "teen" ? "Sleep" : "Blood pressure",
+      isChildProfile(id) ? "Weight" : isTeenProfile(id) ? "Sleep" : "Blood pressure",
     );
+    setAdolescentTab(id === "teen-boy" ? "Male wellness" : "Female wellness");
   };
   const latest = (kind: string) =>
     all
@@ -565,7 +571,7 @@ export default function Medvita() {
   const chartPanel = (kind = chartKind) => (
     <Panel
       title={
-        kind === "Weight" && p.id === "child"
+        kind === "Weight" && isChild
           ? "Growth observations"
           : `${kind} trend`
       }
@@ -661,8 +667,12 @@ export default function Medvita() {
         <div className="metric-grid">
           {(p.id === "child"
             ? ["Weight", "Feeding", "Sleep", "Height"]
-            : p.id === "teen"
-              ? ["Sleep", "Physical activity", "Hydration", "Menstrual cycle"]
+            : p.id === "child-school"
+              ? ["Weight", "Height", "Sleep", "Physical activity"]
+              : isTeen
+              ? p.id === "teen-boy"
+                ? ["Sleep", "Physical activity", "Hydration", "Emotional wellbeing"]
+                : ["Sleep", "Physical activity", "Hydration", "Menstrual cycle"]
               : [
                   "Blood pressure",
                   "Blood glucose",
@@ -697,9 +707,9 @@ export default function Medvita() {
         <div className="dashboard-grid">
           <div className="stack">
             {chartPanel(
-              p.id === "child"
+              isChild
                 ? "Weight"
-                : p.id === "teen"
+                : isTeen
                   ? "Sleep"
                   : "Blood pressure",
             )}
@@ -874,14 +884,14 @@ export default function Medvita() {
   ) {
     const target =
       section === "Child Health"
-        ? "child"
+        ? isChild ? p.id : "child"
         : section === "Adolescent Health"
-          ? "teen"
+          ? isTeen ? p.id : "teen"
           : section === "Adult Health"
             ? "adult"
             : "elder";
     const kinds =
-      target === "child"
+      isChildProfile(target)
         ? [
             "Feeding",
             "Bowel movement",
@@ -895,9 +905,9 @@ export default function Medvita() {
             "Vaccination",
             "Milestone",
           ]
-        : target === "teen"
+        : isTeenProfile(target)
           ? [
-              "Menstrual cycle",
+              ...(target === "teen" ? ["Menstrual cycle"] : ["Puberty questions"]),
               "Private journal",
               "Skin & acne",
               "Hygiene",
@@ -939,7 +949,7 @@ export default function Medvita() {
             </button>
           </div>
         )}
-        {target === "teen" && (
+        {isTeenProfile(target) && (
           <>
             {data.settings.private && (
               <div className="privacy-banner">
@@ -1047,9 +1057,9 @@ export default function Medvita() {
         </div>
         <div className="two-col">
           {chartPanel(
-            target === "child"
+            isChildProfile(target)
               ? "Weight"
-              : target === "teen"
+              : isTeenProfile(target)
                 ? "Sleep"
                 : "Blood pressure",
           )}
@@ -1057,7 +1067,7 @@ export default function Medvita() {
             title={
               target === "elder"
                 ? "Care today"
-                : target === "child"
+                : isChildProfile(target)
                   ? "Growing, one day at a time"
                   : "Your next healthy step"
             }
@@ -1065,7 +1075,7 @@ export default function Medvita() {
             <p>
               {target === "elder"
                 ? `${p.conditions}. Coordinate medicines, observations and daily care with your family.`
-                : target === "child"
+                : isChildProfile(target)
                   ? "Bring feeding, diaper and growth observations together for the next paediatric visit. These measurements are not growth percentile assessments."
                   : "Record how you feel, keep a regular routine and bring questions to your next appointment."}
             </p>
@@ -1088,7 +1098,7 @@ export default function Medvita() {
                 onClick={() => {
                   go("AI Health Intelligence");
                   generate(
-                    target === "child"
+                    isChildProfile(target)
                       ? "Prepare a pediatric consultation report."
                       : "Compare the patient’s current symptoms with previous records.",
                   );
@@ -1510,9 +1520,9 @@ export default function Medvita() {
             </div>
           </Panel>
           {chartPanel(
-            p.id === "child"
+            isChild
               ? "Weight"
-              : p.id === "teen"
+              : isTeen
                 ? "Sleep"
                 : "Blood pressure",
           )}

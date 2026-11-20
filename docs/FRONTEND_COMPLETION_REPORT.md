@@ -9,7 +9,7 @@ All 17 requested navigation screens and a Guided Demo screen are implemented. Th
 | Area | Implemented demonstration |
 | --- | --- |
 | Brand and shell | MEDVITA identity, responsive desktop/mobile navigation, search, patient selector, notification badge, sticky emergency control, themes, larger-text mode, reduced-motion support, keyboard focus and accessible modal dialogs. |
-| Four patient profiles | Aarav, 9 months; Ananya, 16; Priya, 42; Rajesh, 72. Editable demographics, conditions, allergies, family/surgical history, doctor, hospital, contact and lifestyle context. |
+| Six patient profiles | Aarav, 9 months; Vihaan, 8; Ananya, 16; Kabir, 16; Priya, 42; Rajesh, 72. Editable demographics, conditions, allergies, family/surgical history, doctor, hospital, contact and lifestyle context. |
 | Overview | Patient-specific measures and trends, dose schedule, appointments, care team, pending tasks, recent health events, AI summary entry point and wellness navigation. |
 | Timeline and logs | Add, edit and delete records; visible source attribution; dates, values, notes and relevant structured fields; expand long timelines. |
 | Child health | Feeding method, quantity, duration, stool consistency/colour/frequency, vomiting, wet diapers, temperature, sleep, weight, height, head circumference, vaccinations and milestones. Growth observations and paediatric demo report. |
@@ -22,7 +22,7 @@ All 17 requested navigation screens and a Guided Demo screen are implemented. Th
 | Calendar | Month/week/day/agenda, period navigation, category filters, all requested event categories, creation, editing, rescheduling, deletion, status changes, patient/caregiver/doctor/location/notes/reminder fields, attachment references, recurrence and ICS export. |
 | Documents | Actual browser file selection, local PDF/image/text preview, download, deletion, metadata edits, search/category filters and manual correction of mock extraction fields. |
 | Caregivers | Add/edit/remove contacts, assign patient, role and simulated permission scope; care-task statuses; observations, medicine administration, activity history and a recorded handover/transfer summary. |
-| Doctor view | Four-patient switcher, context, shared timeline, prescriptions, trends, appointments, follow-up form, doctor-authored notes, document navigation and AI consultation report. |
+| Doctor view | Six-patient switcher, context, shared timeline, prescriptions, trends, appointments, follow-up form, doctor-authored notes, document navigation and AI consultation report. |
 | Emergency | Confirmation, configured 112/108 dialler link, local geolocation permission/error states, caregiver dialler links when configured, medical card, simulated notifications and emergency event history. |
 | Notifications | Unread/read toggles, mark all read, badges and history. Saving medicines, events, documents and tasks generates in-app notices when enabled. |
 | Analytics/reports | Patient/date/measurement selection, data-backed SVG trends with hover values and tabular readings; symptom/adherence/wellness totals; weekly/monthly/consultation/caregiver/medication report previews and browser print/PDF. |
@@ -54,7 +54,7 @@ For the subsequent full audit and corrected behavior, see [Frontend presentation
 
 ## Verification
 
-The detailed browser audit below is carried over from the supplied ZIP. In this merged repository, I reran lint, typecheck, 216 unit tests, and the production build, and manually checked the home dashboard and a guided journey in Chrome. The ZIP did not include its referenced `output/playwright/` artifacts, so those historical browser sweeps are not independently reproduced here.
+The detailed browser audit below is carried over from the supplied ZIP, which contained four profiles. The merged repository adds a school-age child and an adolescent boy to preserve the earlier life-stage switcher request. In this merged repository, I reran lint, typecheck, 216 unit tests, and the production build, and manually checked the home dashboard and a guided journey in Chrome. The ZIP did not include its referenced `output/playwright/` artifacts, so those historical browser sweeps are not independently reproduced here.
 
 - `npm run lint`: passed, no warnings or errors.
 - `npm run typecheck`: passed.

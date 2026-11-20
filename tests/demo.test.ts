@@ -5,12 +5,15 @@ import {
   reportFor,
   calendarExport,
 } from "../src/lib/demo/data";
+import { isPrivate } from "../src/lib/demo/selectors";
 describe("frontend demo data integrity", () => {
-  it("seeds four isolated life-stage profiles with age-appropriate measures", () => {
+  it("seeds six isolated life-stage profiles with age-appropriate measures", () => {
     const d = seed();
     expect(d.patients.map((p) => p.id)).toEqual([
       "child",
+      "child-school",
       "teen",
+      "teen-boy",
       "adult",
       "elder",
     ]);
@@ -56,10 +59,21 @@ describe("frontend demo data integrity", () => {
     expect(result).not.toContain("PRIVATE_SENTINEL");
     expect(result).not.toContain("Amlodipine");
     expect(result).toContain("DEMONSTRATION AI OUTPUT");
+    expect(
+      isPrivate({
+        id: "teen-boy-private",
+        patient: "teen-boy",
+        category: "observation",
+        title: "Emotional wellbeing",
+        date: "2026-11-20",
+        status: "Recorded",
+        source: "Patient-entered",
+      }),
+    ).toBe(true);
   });
   it("answers different demonstration intents using recorded data", () => {
     const d = seed();
-    const p = d.patients[3];
+    const p = d.patients.find((patient) => patient.id === "elder")!;
     expect(reportFor(p, d.entries, "Show medication schedule")).toContain(
       "Amlodipine",
     );

@@ -54,7 +54,7 @@ export const patients: Patient[] = [
     name: "Aarav Sharma",
     initials: "AS",
     age: "9 months",
-    stage: "Child",
+    stage: "Infant",
     dob: "2026-02-20",
     blood: "Not verified",
     conditions: "No recorded conditions",
@@ -64,6 +64,22 @@ export const patients: Patient[] = [
     history: "Routine newborn review; no surgeries recorded",
     lifestyle: "Mixed feeding, supervised play, regular naps",
     contact: "Kavya Sharma · primary caregiver",
+  },
+  {
+    id: "child-school",
+    name: "Vihaan Mehta",
+    initials: "VM",
+    age: "8 years",
+    stage: "Child",
+    dob: "2018-03-12",
+    blood: "Not verified",
+    conditions: "No recorded conditions",
+    allergies: "None reported; verification pending",
+    doctor: "Dr. Nisha Rao · Paediatrics",
+    hospital: "Demo Children’s Clinic, Bengaluru",
+    history: "Routine school-age check-up; no surgeries recorded",
+    lifestyle: "School activities, outdoor play, regular sleep routine",
+    contact: "Riya Mehta · parent / guardian",
   },
   {
     id: "teen",
@@ -80,6 +96,22 @@ export const patients: Patient[] = [
     history: "Annual review in August; no surgeries recorded",
     lifestyle: "School badminton, vegetarian preferences",
     contact: "Kavya Sharma · parent",
+  },
+  {
+    id: "teen-boy",
+    name: "Kabir Nair",
+    initials: "KN",
+    age: "16 years",
+    stage: "Adolescent boy",
+    dob: "2010-09-12",
+    blood: "Not verified",
+    conditions: "No recorded conditions",
+    allergies: "None reported; verification pending",
+    doctor: "Dr. Nisha Rao · Adolescent health",
+    hospital: "Demo Family Clinic, Bengaluru",
+    history: "Annual review in September; no surgeries recorded",
+    lifestyle: "School football, balanced meals, regular sleep",
+    contact: "Arjun Nair · parent",
   },
   {
     id: "adult",
@@ -116,6 +148,8 @@ export const patients: Patient[] = [
     contact: "Kavya Sharma · daughter",
   },
 ];
+export const isChildProfile = (id: string) => id === "child" || id === "child-school";
+export const isTeenProfile = (id: string) => id === "teen" || id === "teen-boy";
 export const observationTypes = [
   "Blood pressure",
   "Blood glucose",
@@ -203,7 +237,14 @@ export function seed(): DemoData {
               ["Feeding", String(100 + (i % 3) * 10), "ml"],
               ["Sleep", String(13 + (i % 2)), "hours"],
             ]
-          : p.id === "teen"
+          : p.id === "child-school"
+            ? [
+                ["Weight", (26.5 + i * 0.05).toFixed(1), "kg"],
+                ["Height", (128 + i * 0.1).toFixed(1), "cm"],
+                ["Sleep", String(9 + (i % 2) * 0.5), "hours"],
+                ["Physical activity", String(45 + (i % 3) * 5), "minutes"],
+              ]
+            : isTeenProfile(p.id)
             ? [
                 ["Sleep", String(7 + (i % 3) * 0.5), "hours"],
                 ["Physical activity", String(30 + (i % 4) * 5), "minutes"],
@@ -240,7 +281,7 @@ export function seed(): DemoData {
       value:
         p.id === "child"
           ? "Loose stool, 2 episodes"
-          : p.id === "teen"
+          : isTeenProfile(p.id)
             ? "Mild cramps"
             : "Mild fatigue",
       notes:
@@ -263,7 +304,7 @@ export function seed(): DemoData {
     add(
       p.id,
       "event",
-      p.id === "child"
+      isChildProfile(p.id)
         ? "Paediatric growth review"
         : "Health review with Dr. Meera",
       "2026-11-23",
@@ -456,6 +497,14 @@ export function seed(): DemoData {
     value: "43",
     unit: "cm",
   });
+  add("child-school", "observation", "Vaccination", "2026-10-28", {
+    value: "Routine school-age vaccine visit recorded",
+    notes: "Confirm schedule with the paediatrician.",
+  });
+  add("child-school", "observation", "Milestone", "2026-11-18", {
+    value: "Enjoys school sports and outdoor play",
+    notes: "Fictional family observation; not a developmental assessment.",
+  });
   add("teen", "observation", "Menstrual cycle", "2026-11-05", {
     value: "Period start",
     end: "2026-11-09",
@@ -604,7 +653,7 @@ export function reportFor(p: Patient, entries: Entry[], query: string) {
         "; ",
       )}. Symptom observations recorded: ${symptoms.length}; ${symptoms.filter((e) => inRange(e, 7)).length} in the last 7 days and ${symptoms.filter((e) => !inRange(e, 7)).length} earlier. Records: ${symptoms.map((e) => `${e.date}: ${e.title} — ${e.value}`).join("; ")}.`;
   const patternNote =
-    p.id === "child"
+    isChildProfile(p.id)
       ? `Paediatric demonstration rule: ${symptoms.length} symptom entries recorded. ${symptoms.length >= 2 ? "Repeated observations are flagged for paediatric review by this synthetic rule." : "Continue recording observations for the paediatrician."} This is not a clinical threshold. Repeated vomiting, poor feeding or concerns about hydration merit professional assessment; severe or rapidly worsening symptoms need urgent help.`
       : "";
   return `DEMONSTRATION AI OUTPUT\n${p.name} · ${p.age} · ${query}\n\nRecorded context\n${p.conditions}. Reported allergies: ${p.allergies}.\n\n${focus}\n\n${patternNote}\n\nConsultation preparation\nReview recurring observations, discuss measurement technique, and verify the prescription list with ${p.doctor}. ${meds.length} prescription records; ${symptoms.length} symptom observations.\n\nHistorical events\n${hospitals.map((e) => `${e.date}: ${e.title} — ${e.value}`).join("\n")}\n\nData used\n${records.length} non-private local demo records. Latest sources: ${[

@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. The home screen integrates the supplied frontend prototype: 17 interactive health modules, four patient-specific fictional records, child/adolescent/adult/senior care workflows, validated record editing, medicine schedules, AI summary demonstrations, documents with mock extraction, a multi-view calendar, caregiver and doctor views, analytics, notifications, and guided presentation journeys. Use Settings to reset local demo data and switch Presentation mode on for a pitch.
+Open `http://localhost:3000`. The home screen integrates the supplied frontend prototype: 17 interactive health modules, six switchable fictional profiles (infant, school-age child, adolescent girl, adolescent boy, adult, senior), validated record editing, medicine schedules, AI summary demonstrations, documents with mock extraction, a multi-view calendar, caregiver and doctor views, analytics, notifications, and guided presentation journeys. Use Settings to reset local demo data and switch Presentation mode on for a pitch.
 
 The demo is intentionally synthetic. Its structured edits and files use this browser's local storage; mock AI and OCR do not interpret clinical data. No demo data is sent to Supabase or an AI provider. The emergency screen may open device dialler links after a user action; it does not dispatch help or send caregiver messages. Authenticated patient profiles continue to use the existing consent and database controls described below.
 
