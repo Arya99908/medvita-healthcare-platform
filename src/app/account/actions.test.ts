@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createPatientProfile } from "./actions";
+import { createPatientProfile, updatePatientProfile } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -9,6 +9,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const mockSupabase = {
   auth: { getUser: vi.fn() },
   rpc: vi.fn(),
+  from: vi.fn(),
 };
 
 function profileForm(values: Record<string, string>) {
@@ -58,5 +59,33 @@ describe("account profile server action", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/valid date/i);
     expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("requires an active writable patient relationship before updating profile details", async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "caregiver-1" } }, error: null });
+    const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+    const relationshipQuery = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle };
+    mockSupabase.from.mockReturnValue(relationshipQuery);
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+
+    const result = await updatePatientProfile({ status: "idle", message: "" }, profileForm({ patientId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", displayName: "Aarav Sharma", dateOfBirth: "2015-05-10", sexAtBirth: "male" }));
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/only the patient/i);
+    expect(mockSupabase.from).toHaveBeenCalledWith("patient_relationships");
+  });
+
+  it("updates an authorized patient's profile and revalidates its page", async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "patient-1" } }, error: null });
+    const relationshipQuery = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: { id: "relationship-1" }, error: null }) };
+    const updateQuery = { update: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }, error: null }) };
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationshipQuery : updateQuery);
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+
+    const result = await updatePatientProfile({ status: "idle", message: "" }, profileForm({ patientId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", displayName: "Aarav Sharma", dateOfBirth: "2015-05-10", sexAtBirth: "male" }));
+
+    expect(result).toEqual({ status: "success", message: "Profile details updated." });
+    expect(updateQuery.update).toHaveBeenCalledWith({ display_name: "Aarav Sharma", date_of_birth: "2015-05-10", sex_at_birth: "male" });
+    expect(revalidatePath).toHaveBeenCalledWith("/account/patients/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
   });
 });

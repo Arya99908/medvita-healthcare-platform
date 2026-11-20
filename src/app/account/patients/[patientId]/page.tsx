@@ -29,6 +29,7 @@ import StructuredRecordControls from "../structured-record-controls";
 import SeniorCareOverview from "../senior-care-overview";
 import HospitalHistory from "../hospital-history";
 import LaboratoryResults from "../laboratory-results";
+import PatientProfileEditor from "./patient-profile-editor";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
 
@@ -41,7 +42,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   if (authError || !user) redirect("/login");
 
   const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
-    supabase.from("patient_profiles").select("id,display_name,life_stage,date_of_birth,created_by").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_profiles").select("id,display_name,life_stage,date_of_birth,sex_at_birth,created_by").eq("id", patientId).maybeSingle(),
     supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
   ]);
   if (profileError || relationshipError || !profile) notFound();
@@ -171,6 +172,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     <div className="patient-timeline-layout">
       <div className="account-welcome"><span className="micro-label">{stageLabels[profile.life_stage] ?? "PATIENT"} TIMELINE</span><h1>{profile.display_name}</h1><p>Personal entries for this profile, subject to its current access permissions.</p>{canRead && <Link className="account-record-link" href={`/account/patients/${patientId}/reports`}><ChartNoAxesCombined size={15} /> Health reports</Link>}</div>
       <div className="account-safety-note"><ShieldCheck size={17} /><span>Use fictional data only. Entries are unverified personal notes, not diagnoses, prescriptions, or medical advice.</span></div>
+      {canRead && canWrite && relationship.relationship_role === "patient" && <PatientProfileEditor patientId={patientId} displayName={profile.display_name} dateOfBirth={profile.date_of_birth} sexAtBirth={profile.sex_at_birth} />}
       {canRead && <PatientAISummary patientId={patientId} enabled={canGenerateAISummary} reports={aiReportsWithSources ?? []} loadError={Boolean(aiReportsError || aiSourcesError || aiReviewsError)} />}
       {canRead && isSeniorStage && <SeniorCareOverview patientId={patientId} conditions={(medicalConditions ?? []).map(({ name, status }) => ({ name, status }))} tasks={(careTasks ?? []).map(({ id, title, status, due_at }) => ({ id, title, status, due_at }))} medications={(medications ?? []).map(({ id, medicine_name, status }) => ({ id, medicine_name, status }))} schedules={(medicationSchedules ?? []).map(({ medication_id, frequency, administration_times, status }) => ({ medication_id, frequency, administration_times, status }))} symptoms={(symptoms ?? []).slice(0, 4).map(({ id, symptom, severity, observed_at }) => ({ id, symptom, severity, observed_at }))} appointments={(appointments ?? []).slice(0, 100).map(({ id, title, event_type, status, starts_at }) => ({ id, title, event_type, status, starts_at }))} caregiverCount={new Set((seniorCareTeam ?? []).map(({ user_id }) => user_id)).size} caregiverRoles={(seniorCareTeam ?? []).map(({ relationship_role }) => relationship_role)} availability={(seniorAvailability ?? []).map((item) => ({ ...item, relationship_role: (seniorCareTeam ?? []).find((link) => link.user_id === item.user_id)?.relationship_role ?? "care partner" }))} ownAvailability={(seniorAvailability ?? []).find((item) => item.user_id === user.id) ? { ...(seniorAvailability ?? []).find((item) => item.user_id === user.id)!, relationship_role: relationship.relationship_role } : null} canSetAvailability={Boolean(canWrite && ["caregiver", "family_member", "nurse"].includes(relationship?.relationship_role ?? ""))} alerts={(emergencyAlerts ?? []).map(({ id, alert_type, status, created_at }) => ({ id, alert_type, status, created_at }))} loadErrors={{ conditions: Boolean(medicalConditionsError), tasks: Boolean(careTasksError), medications: Boolean(medicationsError || medicationSchedulesError), symptoms: Boolean(symptomsError), appointments: Boolean(appointmentsError), caregivers: Boolean(seniorCareTeamError || seniorAvailabilityError), alerts: Boolean(emergencyAlertsError) }} />}
       {canRead && <WellnessCenter patientId={patientId} lifeStage={profile.life_stage as "infant" | "child" | "adolescent" | "adult" | "senior"} canWrite={Boolean(canWrite)} plans={wellnessPlans ?? []} entries={wellnessEntries ?? []} entriesTruncated={(wellnessEntryCount ?? 0) > (wellnessEntries?.length ?? 0)} conditions={(emergencyConditions ?? []).map((item) => ({ name: item.name }))} allergies={(emergencyAllergies ?? []).map((item) => ({ name: item.substance }))} />}
