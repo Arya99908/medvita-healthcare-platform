@@ -117,11 +117,18 @@ const medicationScheduleSchema = z.object({
   administrationTimes: z.string().trim().optional().default(""),
   startsOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid start date."),
   endsOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid end date."),
+  reminderEnabled: z.enum(["true", "false"]).default("false"),
+  reminderTimezone: z.string().trim().min(1).max(100).default("UTC").refine((value) => {
+    try { new Intl.DateTimeFormat("en-US", { timeZone: value }); return true; } catch { return false; }
+  }, "Choose a valid time zone."),
+  reminderDays: z.array(z.coerce.number().int().min(0).max(6)).max(7).default([0, 1, 2, 3, 4, 5, 6]),
 }).superRefine((value, context) => {
   const times = value.administrationTimes ? value.administrationTimes.split(",").map((time) => time.trim()) : [];
   if (times.length > 8 || times.some((time) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))) context.addIssue({ code: "custom", path: ["administrationTimes"], message: "Enter up to 8 valid times in 24-hour format, separated by commas." });
   if (new Set(times).size !== times.length) context.addIssue({ code: "custom", path: ["administrationTimes"], message: "Remove duplicate administration times." });
   if (value.startsOn && value.endsOn && value.endsOn < value.startsOn) context.addIssue({ code: "custom", path: ["endsOn"], message: "End date must be on or after the start date." });
+  if (value.reminderEnabled === "true" && times.length === 0) context.addIssue({ code: "custom", path: ["administrationTimes"], message: "Enter at least one schedule time before turning reminders on." });
+  if (value.reminderEnabled === "true" && value.reminderDays.length === 0) context.addIssue({ code: "custom", path: ["reminderDays"], message: "Choose at least one reminder day." });
 });
 
 const medicationAdministrationSchema = z.object({
@@ -1058,7 +1065,7 @@ export async function updateMedicationDetails(patientId: string, medicationId: s
 }
 
 export async function createMedicationSchedule(patientId: string, _previous: MedicationFormState, formData: FormData): Promise<MedicationFormState> {
-  const parsed = medicationScheduleSchema.safeParse({ patientId, medicationId: formData.get("medicationId"), frequency: formData.get("frequency"), administrationTimes: formData.get("administrationTimes") ?? "", startsOn: formData.get("startsOn") ?? "", endsOn: formData.get("endsOn") ?? "" });
+  const parsed = medicationScheduleSchema.safeParse({ patientId, medicationId: formData.get("medicationId"), frequency: formData.get("frequency"), administrationTimes: formData.get("administrationTimes") ?? "", startsOn: formData.get("startsOn") ?? "", endsOn: formData.get("endsOn") ?? "", reminderEnabled: formData.get("reminderEnabled") ?? "false", reminderTimezone: formData.get("reminderTimezone") ?? "UTC", reminderDays: formData.getAll("reminderDays") });
   if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the schedule details and try again." };
   const times = parsed.data.administrationTimes ? parsed.data.administrationTimes.split(",").map((time) => time.trim()) : [];
   const supabase = await createClient();
@@ -1070,10 +1077,10 @@ export async function createMedicationSchedule(patientId: string, _previous: Med
   ]);
   if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You do not have active write access to this profile." };
   if (medicationError || !medication || medication.status !== "active") return { status: "error", message: "Choose a current medicine note for this profile." };
-  const { error } = await supabase.from("medication_schedules").insert({ patient_id: patientId, medication_id: medication.id, frequency: parsed.data.frequency, administration_times: times, starts_on: parsed.data.startsOn || null, ends_on: parsed.data.endsOn || null, reminder_enabled: false, status: "active", visibility: medication.visibility, created_by: user.id });
+  const { error } = await supabase.from("medication_schedules").insert({ patient_id: patientId, medication_id: medication.id, frequency: parsed.data.frequency, administration_times: times, starts_on: parsed.data.startsOn || null, ends_on: parsed.data.endsOn || null, reminder_enabled: parsed.data.reminderEnabled === "true", reminder_timezone: parsed.data.reminderTimezone, reminder_days: parsed.data.reminderDays.length ? parsed.data.reminderDays : [0, 1, 2, 3, 4, 5, 6], status: "active", visibility: medication.visibility, created_by: user.id });
   if (error) return { status: "error", message: "The medicine schedule could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
-  return { status: "success", message: "Schedule saved from the entered care plan. No reminder was created." };
+  return { status: "success", message: parsed.data.reminderEnabled === "true" ? "Schedule saved. Generic in-app reminders will follow the times and days you selected." : "Schedule saved from the entered care plan. Reminders are off for this schedule." };
 }
 
 export async function logMedicationAdministration(patientId: string, _previous: MedicationFormState, formData: FormData): Promise<MedicationFormState> {

@@ -17,6 +17,7 @@ export default async function NotificationsPage() {
   ]);
   const taskPreference = preferences?.find((preference) => preference.category === "caregiver_task")?.enabled ?? true;
   const appointmentPreference = preferences?.find((preference) => preference.category === "appointment_reminder")?.enabled ?? true;
+  const medicationPreference = preferences?.find((preference) => preference.category === "medication_reminder")?.enabled ?? true;
   const hasLoadError = Boolean(notificationsError || preferencesError);
 
   return <main className="account-page care-dashboard-page">
@@ -28,6 +29,7 @@ export default async function NotificationsPage() {
         <div className="account-card-heading"><div><span className="micro-label">PREFERENCES</span><h2 id="notification-preferences-title">In-app alerts</h2><p>Choose which available updates appear here.</p></div><span className="account-card-icon"><Bell size={18} /></span></div>
         <div className="notification-preference-row"><div><strong>Care task assignments</strong><span>Notify this account when a care task is assigned.</span></div><form action={updateNotificationPreference}><input type="hidden" name="category" value="caregiver_task" /><input type="hidden" name="enabled" value={taskPreference ? "false" : "true"} /><button className="secondary-button" type="submit">Turn {taskPreference ? "off" : "on"}</button></form><span className={`account-status ${taskPreference ? "active" : "inactive"}`}>{taskPreference ? "On" : "Off"}</span></div>
         <div className="notification-preference-row"><div><strong>Appointment reminders</strong><span>Show a private in-app alert about 24 hours before an event you add.</span></div><form action={updateNotificationPreference}><input type="hidden" name="category" value="appointment_reminder" /><input type="hidden" name="enabled" value={appointmentPreference ? "false" : "true"} /><button className="secondary-button" type="submit">Turn {appointmentPreference ? "off" : "on"}</button></form><span className={`account-status ${appointmentPreference ? "active" : "inactive"}`}>{appointmentPreference ? "On" : "Off"}</span></div>
+        <div className="notification-preference-row"><div><strong>Medication schedule reminders</strong><span>Show private reminders at times and days explicitly selected for a schedule.</span></div><form action={updateNotificationPreference}><input type="hidden" name="category" value="medication_reminder" /><input type="hidden" name="enabled" value={medicationPreference ? "false" : "true"} /><button className="secondary-button" type="submit">Turn {medicationPreference ? "off" : "on"}</button></form><span className={`account-status ${medicationPreference ? "active" : "inactive"}`}>{medicationPreference ? "On" : "Off"}</span></div>
         <p className="notification-channel-note">Scheduled in-app reminders are checked every minute. Email, SMS, and push delivery are not configured.</p>
       </section>
       <section className="account-card care-dashboard-card" aria-labelledby="notification-list-title">

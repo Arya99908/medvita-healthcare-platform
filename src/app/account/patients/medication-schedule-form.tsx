@@ -16,16 +16,24 @@ export function MedicationScheduleForm({ patientId, medicationId }: { patientId:
   const [state, action, pending] = useActionState(createMedicationSchedule.bind(null, patientId), initialState);
   const formRef = useRef<HTMLFormElement>(null);
   const suffix = medicationId.replaceAll("-", "");
-  useEffect(() => { if (state.status === "success") formRef.current?.reset(); }, [state]);
+  const setReminderTimezone = () => {
+    const field = formRef.current?.elements.namedItem("reminderTimezone");
+    if (field instanceof HTMLInputElement) field.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  };
+  useEffect(() => { setReminderTimezone(); }, []);
+  useEffect(() => { if (state.status === "success") { formRef.current?.reset(); setReminderTimezone(); } }, [state]);
   return <details className="medication-schedule-disclosure">
     <summary>Record a schedule</summary>
     <form ref={formRef} action={action} className="account-profile-form timeline-form">
       <input type="hidden" name="medicationId" value={medicationId} />
-      <p className="timeline-privacy-note">Copy frequency and times from an existing prescription or care plan. This saves a record only; it does not send reminders or advise a dose.</p>
+      <p className="timeline-privacy-note">Copy the schedule from an existing prescription or care plan. Optional reminders repeat only on the days and at the times you choose; MedVita does not set or change a dose.</p>
       <label htmlFor={`med-schedule-frequency-${suffix}`}>Frequency as written</label><input id={`med-schedule-frequency-${suffix}`} name="frequency" maxLength={120} required placeholder="Copy from the care plan" />
       <label htmlFor={`med-schedule-times-${suffix}`}>Times <span>(optional, 24-hour time; comma separated)</span></label><input id={`med-schedule-times-${suffix}`} name="administrationTimes" maxLength={64} placeholder="08:00, 20:00" />
       <label htmlFor={`med-schedule-start-${suffix}`}>Start date <span>(optional)</span></label><input id={`med-schedule-start-${suffix}`} name="startsOn" type="date" />
       <label htmlFor={`med-schedule-end-${suffix}`}>End date <span>(optional)</span></label><input id={`med-schedule-end-${suffix}`} name="endsOn" type="date" />
+      <label className="medication-reminder-toggle"><input type="checkbox" name="reminderEnabled" value="true" /> Turn on generic in-app reminders for this schedule</label>
+      <fieldset className="medication-reminder-days"><legend>Reminder days <span>(all days selected)</span></legend>{[[0, "Sun"], [1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "Sat"]].map(([day, label]) => <label key={day}><input type="checkbox" name="reminderDays" value={day} defaultChecked />{label}</label>)}</fieldset>
+      <input type="hidden" name="reminderTimezone" defaultValue="UTC" />
       {state.message && <p className={`account-form-message ${state.status}`} role="status">{state.status === "success" && <Check size={15} />}{state.message}</p>}
       <button className="primary-button account-submit" type="submit" disabled={pending}><Plus size={16} />{pending ? "Saving…" : "Save schedule"}</button>
     </form>

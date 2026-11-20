@@ -1559,6 +1559,8 @@ export type Database = {
           medication_id: string
           patient_id: string
           reminder_enabled: boolean
+          reminder_days: number[]
+          reminder_timezone: string
           starts_on: string | null
           status: string
           updated_at: string
@@ -1574,6 +1576,8 @@ export type Database = {
           medication_id: string
           patient_id: string
           reminder_enabled?: boolean
+          reminder_days?: number[]
+          reminder_timezone?: string
           starts_on?: string | null
           status?: string
           updated_at?: string
@@ -1589,6 +1593,8 @@ export type Database = {
           medication_id?: string
           patient_id?: string
           reminder_enabled?: boolean
+          reminder_days?: number[]
+          reminder_timezone?: string
           starts_on?: string | null
           status?: string
           updated_at?: string

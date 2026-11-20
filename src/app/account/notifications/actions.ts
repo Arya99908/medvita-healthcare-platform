@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 
-const preferenceSchema = z.object({ category: z.enum(["caregiver_task", "appointment_reminder"]), enabled: z.enum(["true", "false"]) });
+const preferenceSchema = z.object({ category: z.enum(["caregiver_task", "appointment_reminder", "medication_reminder"]), enabled: z.enum(["true", "false"]) });
 
 export async function markNotificationRead(formData: FormData) {
   const id = z.string().uuid().safeParse(formData.get("notificationId"));

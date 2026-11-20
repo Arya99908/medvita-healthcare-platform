@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(211);
+select extensions.plan(220);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -87,6 +87,29 @@ select extensions.is((select title || ' ' || message from public.notifications w
 update public.notifications set scheduled_at=now()-interval '1 minute' where user_id='22222222-2222-4222-8222-222222222222' and category='appointment_reminder';
 select medvita_private.release_due_appointment_reminders();
 select extensions.ok((select delivery_status='sent' and sent_at is not null from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and category='appointment_reminder'),'due appointment reminder is released to the in-app notification list');
+insert into public.medication_records(id,patient_id,medicine_name,status,created_by)
+values('c1c1c1c1-c1c1-41c1-81c1-c1c1c1c1c1c1','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional scheduled medicine','active','22222222-2222-4222-8222-222222222222');
+with planned as (select now() at time zone 'Asia/Kolkata' + interval '1 day 10 minutes' as local_at)
+insert into public.medication_schedules(id,patient_id,medication_id,frequency,administration_times,starts_on,ends_on,reminder_enabled,reminder_timezone,reminder_days,status,visibility,created_by)
+select 'c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','c1c1c1c1-c1c1-41c1-81c1-c1c1c1c1c1c1','As entered in fictional care plan',jsonb_build_array(to_char(planned.local_at,'HH24:MI')),(now() at time zone 'Asia/Kolkata')::date,null,true,'Asia/Kolkata',array[extract(dow from planned.local_at)::smallint],'active','general','22222222-2222-4222-8222-222222222222' from planned;
+select extensions.is((select count(*) from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and dedupe_key like 'medication-reminder:c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2:%' and delivery_status='queued'),1::bigint,'explicit medication reminder setup schedules the next matching weekday in its chosen time zone');
+select extensions.is((select count(*) from public.notifications notification join public.medication_schedules schedule on notification.dedupe_key like 'medication-reminder:' || schedule.id::text || ':%' where schedule.id='c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2' and notification.user_id=schedule.created_by and to_char(notification.scheduled_at at time zone schedule.reminder_timezone,'YYYY-MM-DD HH24:MI')=to_char((now() at time zone schedule.reminder_timezone)+interval '1 day 10 minutes','YYYY-MM-DD HH24:MI')),1::bigint,'medication reminder preserves the entered local clock time across UTC storage');
+select extensions.is((select title || ' ' || message from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and dedupe_key like 'medication-reminder:c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2:%' order by scheduled_at limit 1),'Medication schedule reminder Check the medication instructions recorded for this time. Record what happened in MedVita if helpful.','medication reminder message does not expose medicine name or dosing information');
+insert into public.notification_preferences(user_id,category,channel,enabled) values('22222222-2222-4222-8222-222222222222','medication_reminder','in_app',false) on conflict(user_id,category,channel) do update set enabled=false;
+select extensions.is((select count(*) from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and dedupe_key like 'medication-reminder:c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2:%' and delivery_status='queued'),0::bigint,'turning off medication alerts cancels queued schedule reminders');
+update public.notification_preferences set enabled=true where user_id='22222222-2222-4222-8222-222222222222' and category='medication_reminder' and channel='in_app';
+select extensions.is((select count(*) from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and dedupe_key like 'medication-reminder:c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2:%' and delivery_status='queued'),1::bigint,'turning medication alerts back on restores the next selected reminder');
+reset role;
+update public.notifications set scheduled_at=now()-interval '1 minute' where user_id='22222222-2222-4222-8222-222222222222' and dedupe_key like 'medication-reminder:c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2:%' and delivery_status='queued';
+select medvita_private.release_due_appointment_reminders();
+set local role authenticated;
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.ok((select delivery_status='sent' and sent_at is not null from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and dedupe_key like 'medication-reminder:c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2:%'),'due medication schedule reminder is released to the in-app notification list');
+update public.medication_schedules set status='paused',reminder_enabled=false where id='c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2';
+select extensions.is((select count(*) from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and dedupe_key like 'medication-reminder:c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2:%' and delivery_status='queued'),0::bigint,'pausing a medication schedule cancels its pending reminders');
+update public.medication_schedules set status='active',reminder_enabled=true where id='c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2';
+update public.medication_records set status='discontinued' where id='c1c1c1c1-c1c1-41c1-81c1-c1c1c1c1c1c1';
+select extensions.is((select count(*) from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and dedupe_key like 'medication-reminder:c2c2c2c2-c2c2-42c2-82c2-c2c2c2c2c2c2:%' and delivery_status='queued'),0::bigint,'discontinuing a medicine cancels pending reminders even if its schedule remains active');
 
 select extensions.ok(has_table_privilege('authenticated','public.health_events','INSERT'),'authenticated role has insert privilege for the RLS write-denial check');
 
@@ -211,6 +234,9 @@ select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,ti
 select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional unauthorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot add a care task to another patient profile');
 select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,due_at,assigned_to,created_by) values('abababab-abab-4bab-8bab-abababababab','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task assigned to caregiver','2026-11-19 00:00:00+00','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222')$$,'patient can assign a task to an active writable caregiver');
 select extensions.is((select count(*) from public.notifications where user_id='33333333-3333-4333-8333-333333333333' and patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'task creator cannot read a notification addressed to another account');
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select extensions.is((select count(*) from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and category='medication_reminder'),0::bigint,'unrelated account cannot read a private medication schedule reminder');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
 select extensions.is((select count(*) from public.notifications where category='caregiver_task' and patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),1::bigint,'assigned caregiver receives one in-app task notification by default');
 select extensions.is((select title from public.notifications where category='caregiver_task' and patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' limit 1),'A care task was assigned to you','notification text does not include the task title or health details');

@@ -914,7 +914,30 @@ describe("medication schedules and dose event actions", () => {
       : table === "medication_records" ? query({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "active", visibility: "general" }, error: null }) : { insert });
     const result = await createMedicationSchedule(patientId, { status: "idle", message: "" }, medicationScheduleForm());
     expect(result.status).toBe("success");
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, medication_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", frequency: "Twice daily as recorded", administration_times: ["08:00", "20:00"], reminder_enabled: false, status: "active", visibility: "general", created_by: "user-1" }));
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, medication_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", frequency: "Twice daily as recorded", administration_times: ["08:00", "20:00"], reminder_enabled: false, reminder_timezone: "UTC", reminder_days: [0, 1, 2, 3, 4, 5, 6], status: "active", visibility: "general", created_by: "user-1" }));
+  });
+
+  it("saves opt-in reminder days and the user's IANA time zone", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : table === "medication_records" ? query({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "active", visibility: "general" }, error: null }) : { insert });
+    const form = medicationScheduleForm({ reminderEnabled: "true", reminderTimezone: "Asia/Kolkata" });
+    form.append("reminderDays", "1");
+    form.append("reminderDays", "3");
+    const result = await createMedicationSchedule(patientId, { status: "idle", message: "" }, form);
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ reminder_enabled: true, reminder_timezone: "Asia/Kolkata", reminder_days: [1, 3] }));
+  });
+
+  it("requires an entered time and a valid time zone before enabling reminders", async () => {
+    const missingTime = await createMedicationSchedule(patientId, { status: "idle", message: "" }, medicationScheduleForm({ reminderEnabled: "true", administrationTimes: "" }));
+    expect(missingTime.status).toBe("error");
+    expect(missingTime.message).toMatch(/at least one schedule time/i);
+    const invalidZone = await createMedicationSchedule(patientId, { status: "idle", message: "" }, medicationScheduleForm({ reminderTimezone: "Not/AZone" }));
+    expect(invalidZone.status).toBe("error");
+    expect(invalidZone.message).toMatch(/valid time zone/i);
+    expect(createClient).not.toHaveBeenCalled();
   });
 
   it("rejects duplicate times and schedules for inactive medicines", async () => {
