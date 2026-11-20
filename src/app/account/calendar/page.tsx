@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Download, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Download, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "../actions";
 import AppointmentStatusForm from "../patients/appointment-status-form";
@@ -77,7 +77,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const calendarHref = (nextView: CalendarView, date: string) => `/account/calendar?view=${nextView}&date=${date}`;
 
   return <main className="account-page">
-    <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Your profiles</Link><Link href="/" className="account-back-link">Presentation demo</Link><form action={signOut}><button type="submit" className="account-signout">Sign out</button></form></div></header>
+    <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Your profiles</Link><Link href="/account/care" className="account-back-link"><ClipboardList size={15} /> Care tasks</Link><Link href="/" className="account-back-link">Presentation demo</Link><form action={signOut}><button type="submit" className="account-signout">Sign out</button></form></div></header>
     <div className="patient-timeline-layout calendar-page-layout">
       <div className="account-welcome"><span className="micro-label">MEDICAL CALENDAR</span><h1>Care calendar</h1><p>Appointments and health events across profiles you can read.</p></div>
       <div className="account-safety-note"><ShieldCheck size={17} /><span>Calendar events are private profile records. No reminders, external bookings, or calendar sync are configured.</span></div>
