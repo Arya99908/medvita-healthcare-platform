@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(204);
+select extensions.plan(211);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -82,6 +82,11 @@ values('a4a4a4a4-a4a4-44a4-84a4-a4a4a4a4a4a4','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbb
 
 insert into public.appointments(id,patient_id,title,starts_at,status,created_by)
 values('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional patient B appointment','2026-11-22 03:30:00+00','scheduled','22222222-2222-4222-8222-222222222222');
+select extensions.is((select count(*) from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and category='appointment_reminder' and delivery_status='queued'),1::bigint,'future appointment schedules a private in-app reminder for its creator');
+select extensions.is((select title || ' ' || message from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and category='appointment_reminder'),'Upcoming health event You have a health event coming up in about 24 hours. Sign in to view your care calendar.','appointment reminder content does not expose the event title or clinical details');
+update public.notifications set scheduled_at=now()-interval '1 minute' where user_id='22222222-2222-4222-8222-222222222222' and category='appointment_reminder';
+select medvita_private.release_due_appointment_reminders();
+select extensions.ok((select delivery_status='sent' and sent_at is not null from public.notifications where user_id='22222222-2222-4222-8222-222222222222' and category='appointment_reminder'),'due appointment reminder is released to the in-app notification list');
 
 select extensions.ok(has_table_privilege('authenticated','public.health_events','INSERT'),'authenticated role has insert privilege for the RLS write-denial check');
 
@@ -190,8 +195,14 @@ select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111'
 select extensions.lives_ok($$insert into public.menstrual_records(patient_id,period_start,visibility,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-11-15','sensitive_adolescent','11111111-1111-4111-8111-111111111111')$$,'adolescent can add own private cycle record');
 select extensions.throws_ok($$insert into public.menstrual_records(patient_id,period_start,visibility,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-11-15','sensitive_adolescent','11111111-1111-4111-8111-111111111111')$$,'42501',null,'adolescent cannot add private cycle record to another patient');
 select extensions.lives_ok($$insert into public.appointments(id,patient_id,title,starts_at,created_by) values('ffffffff-ffff-4fff-8fff-ffffffffffff','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional authorized appointment','2026-11-21 03:30:00+00','11111111-1111-4111-8111-111111111111')$$,'patient with active write access can add an own-profile appointment');
+select extensions.is((select count(*) from public.notifications where user_id='11111111-1111-4111-8111-111111111111' and dedupe_key like 'appointment-reminder:ffffffff-ffff-4fff-8fff-ffffffffffff:%' and delivery_status='queued'),1::bigint,'appointment creator can read their pending private reminder');
+insert into public.notification_preferences(user_id,category,channel,enabled) values('11111111-1111-4111-8111-111111111111','appointment_reminder','in_app',false) on conflict(user_id,category,channel) do update set enabled=false;
+select extensions.is((select count(*) from public.notifications where user_id='11111111-1111-4111-8111-111111111111' and dedupe_key like 'appointment-reminder:ffffffff-ffff-4fff-8fff-ffffffffffff:%' and delivery_status='queued'),0::bigint,'turning off reminders cancels pending in-app alerts');
+update public.notification_preferences set enabled=true where user_id='11111111-1111-4111-8111-111111111111' and category='appointment_reminder' and channel='in_app';
+select extensions.is((select count(*) from public.notifications where user_id='11111111-1111-4111-8111-111111111111' and dedupe_key like 'appointment-reminder:ffffffff-ffff-4fff-8fff-ffffffffffff:%' and delivery_status='queued'),1::bigint,'turning reminders back on reschedules upcoming events');
 select extensions.throws_ok($$insert into public.appointments(patient_id,title,starts_at,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional unauthorized appointment','2026-11-21 03:30:00+00','11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add an appointment to another patient profile');
 select extensions.lives_ok($$update public.appointments set status='completed' where id='ffffffff-ffff-4fff-8fff-ffffffffffff'$$,'patient with active write access can update own appointment plan');
+select extensions.is((select count(*) from public.notifications where user_id='11111111-1111-4111-8111-111111111111' and dedupe_key like 'appointment-reminder:ffffffff-ffff-4fff-8fff-ffffffffffff:%' and delivery_status='queued'),0::bigint,'completed appointment cancels its pending reminder');
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.lives_ok($$insert into public.wellness_plans(id,patient_id,title,category,description,source,status,created_by,visibility) values('12121212-1212-4121-8121-121212121212','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional movement routine','exercise','General education only','patient','active','22222222-2222-4222-8222-222222222222','general')$$,'patient can save a wellness goal to their profile');
 select extensions.lives_ok($$insert into public.wellness_records(id,patient_id,plan_id,record_type,value,created_by,visibility) values('13131313-1313-4131-8131-131313131313','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','12121212-1212-4121-8121-121212121212','exercise','{"minutes":15}'::jsonb,'22222222-2222-4222-8222-222222222222','general')$$,'patient can log a wellness entry linked to their own goal');
