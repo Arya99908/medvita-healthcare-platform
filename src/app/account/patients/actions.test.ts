@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverTask, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, logMedicationAdministration, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, logMedicationAdministration, recordEmergencyAlert, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -926,6 +926,56 @@ describe("appointment status server action", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/active write access/i);
     expect(mockSupabase.from).not.toHaveBeenCalledWith("appointments");
+  });
+});
+
+describe("emergency assistance actions", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : { insert: vi.fn().mockResolvedValue({ error: null }) });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("saves an emergency contact without sending a notification", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const form = new FormData();
+    form.set("displayName", "Fictional caregiver"); form.set("relationship", "Daughter"); form.set("phone", "+91 98765 43210"); form.set("priority", "1");
+    const result = await createEmergencyContact(patientId, { status: "idle", message: "" }, form);
+    expect(result).toEqual({ status: "success", message: "Emergency contact saved. They have not been notified." });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, display_name: "Fictional caregiver", phone: "+91 98765 43210", priority: 1, created_by: "user-1" }));
+  });
+
+  it("refuses to record an emergency action for a read-only relationship", async () => {
+    mockSupabase.from.mockImplementation(() => query({ data: { status: "active", can_read: true, can_write: false }, error: null }));
+    const form = new FormData(); form.set("alertType", "ambulance_call_requested");
+    const result = await recordEmergencyAlert(patientId, { status: "idle", message: "" }, form);
+    expect(result.status).toBe("error");
+    expect(mockSupabase.from).not.toHaveBeenCalledWith("emergency_alerts");
+  });
+
+  it("records only that a user requested a manual emergency action", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const form = new FormData(); form.set("alertType", "ambulance_call_requested");
+    const result = await recordEmergencyAlert(patientId, { status: "idle", message: "" }, form);
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, alert_type: "ambulance_call_requested", status: "created", created_by: "user-1", message: expect.stringContaining("No call, dispatch") }));
+  });
+
+  it("removes only the selected emergency contact from an authorized profile", async () => {
+    const removal = deleteQuery({ data: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : removal);
+    const result = await deleteEmergencyContact(patientId, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", { status: "idle", message: "" }, new FormData());
+    expect(result.status).toBe("success");
+    expect(removal.delete).toHaveBeenCalled();
+    expect(removal.eq).toHaveBeenCalledWith("patient_id", patientId);
   });
 });
 

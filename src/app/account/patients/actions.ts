@@ -209,6 +209,24 @@ const caregiverTaskStatusSchema = z.object({
   status: z.enum(["open", "complete"]),
 });
 
+const emergencyContactSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  displayName: z.string().trim().min(2, "Enter the contact's name.").max(80, "Keep the name under 80 characters."),
+  relationship: z.string().trim().max(80, "Keep the relationship under 80 characters.").optional().default(""),
+  phone: z.string().trim().min(7, "Enter a phone number with its country code where possible.").max(24, "Keep the phone number under 24 characters.").regex(/^\+?[0-9][0-9 ()-]{5,22}$/, "Enter a phone number using digits, spaces, parentheses, or hyphens."),
+  priority: z.coerce.number().int().min(1).max(10),
+});
+
+const emergencyContactIdSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  contactId: z.string().uuid("Choose a valid emergency contact."),
+});
+
+const emergencyAlertSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  alertType: z.enum(["ambulance_call_requested", "sos_call_requested", "caregiver_call_requested"]),
+});
+
 const menstrualSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   periodStart: z.string().trim().refine(isValidDateOnly, "Enter a valid start date."),
@@ -1001,4 +1019,48 @@ export async function uploadPatientDocument(patientId: string, _previous: Docume
 
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Document uploaded as an unverified file." };
+}
+
+export async function createEmergencyContact(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = emergencyContactSchema.safeParse({ patientId, displayName: formData.get("displayName"), relationship: formData.get("relationship") ?? "", phone: formData.get("phone"), priority: formData.get("priority") ?? "1" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the contact details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before adding an emergency contact." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You do not have active write access to this profile." };
+  const { error } = await supabase.from("emergency_contacts").insert({ patient_id: patientId, display_name: parsed.data.displayName, relationship: parsed.data.relationship || null, phone: parsed.data.phone, priority: parsed.data.priority, created_by: user.id, visibility: "general" });
+  if (error) return { status: "error", message: "The emergency contact could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Emergency contact saved. They have not been notified." };
+}
+
+export async function deleteEmergencyContact(patientId: string, contactId: string, _previous: CareLogFormState, _formData: FormData): Promise<CareLogFormState> {
+  void _previous;
+  void _formData;
+  const parsed = emergencyContactIdSchema.safeParse({ patientId, contactId });
+  if (!parsed.success) return { status: "error", message: "Choose a valid emergency contact." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before removing an emergency contact." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You do not have active write access to this profile." };
+  const { data, error } = await supabase.from("emergency_contacts").delete().eq("id", contactId).eq("patient_id", patientId).select("id").maybeSingle();
+  if (error || !data) return { status: "error", message: "The contact could not be removed. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Emergency contact removed from this profile." };
+}
+
+export async function recordEmergencyAlert(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = emergencyAlertSchema.safeParse({ patientId, alertType: formData.get("alertType") });
+  if (!parsed.success) return { status: "error", message: "Choose a valid emergency action." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before recording this emergency action." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You do not have active write access to this profile." };
+  const { error } = await supabase.from("emergency_alerts").insert({ patient_id: patientId, alert_type: parsed.data.alertType, status: "created", message: "A user recorded an emergency action in MedVita. No call, dispatch, location share, or contact notification was sent by the app.", created_by: user.id, visibility: "general" });
+  if (error) return { status: "error", message: "The emergency action could not be recorded. Use your device to contact local emergency services directly." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Action recorded. MedVita did not place a call, dispatch help, share location, or notify contacts. Use the manual call links below." };
 }

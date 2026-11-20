@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(83);
+select extensions.plan(87);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -146,7 +146,11 @@ select extensions.lives_ok($$insert into public.medication_schedules(id,patient_
 select extensions.throws_ok($$insert into public.medication_schedules(patient_id,medication_id,frequency,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','dddddddd-dddd-4ddd-8ddd-dddddddddddd','Fictional unauthorized schedule','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot create a medication schedule for another profile');
 select extensions.lives_ok($$insert into public.medication_administration_logs(patient_id,medication_id,schedule_id,status,recorded_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','dddddddd-dddd-4ddd-8ddd-dddddddddddd','88888888-8888-4888-8888-888888888888','taken','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can record a dose event for own medicine note');
 select extensions.throws_ok($$insert into public.medication_administration_logs(patient_id,medication_id,status,recorded_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','dddddddd-dddd-4ddd-8ddd-dddddddddddd','taken','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot record a dose event for another profile');
+select extensions.lives_ok($$insert into public.emergency_contacts(patient_id,display_name,phone,priority,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional emergency contact','+91 98765 43210',1,'22222222-2222-4222-8222-222222222222')$$,'patient with active write access can save an emergency contact');
+select extensions.lives_ok($$insert into public.emergency_alerts(patient_id,alert_type,status,message,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','ambulance_call_requested','created','Fictional manual action record; no call was sent','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can record an emergency action');
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select extensions.throws_ok($$insert into public.emergency_contacts(patient_id,display_name,phone,priority,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional unauthorized contact','+91 98765 43210',1,'11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add an emergency contact to another profile');
+select extensions.throws_ok($$insert into public.emergency_alerts(patient_id,alert_type,status,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','sos_call_requested','created','11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot record an emergency action for another profile');
 with changed as (update public.appointments set status='cancelled' where id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' returning id)
 select extensions.is((select count(*) from changed),0::bigint,'patient cannot update another patient appointment plan');
 reset role;

@@ -9,6 +9,7 @@ import MedicationForm from "../medication-form";
 import MedicationEditForm from "../medication-edit-form";
 import MedicationStatusForm from "../medication-status-form";
 import { MedicationAdministrationForm, MedicationScheduleForm } from "../medication-schedule-form";
+import PatientEmergencyPanel from "../patient-emergency-panel";
 import DocumentForm from "../document-form";
 import SymptomForm from "../symptom-form";
 import ChildCareForms from "../child-care-forms";
@@ -29,7 +30,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   if (authError || !user) redirect("/login");
 
   const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
-    supabase.from("patient_profiles").select("id,display_name,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_profiles").select("id,display_name,life_stage,date_of_birth").eq("id", patientId).maybeSingle(),
     supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
   ]);
   if (profileError || relationshipError || !profile) notFound();
@@ -73,6 +74,12 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   const { data: medications, error: medicationsError } = canRead
     ? await supabase.from("medication_records").select("id,medicine_name,generic_name,strength,route,instructions,status,visibility,created_by,created_at").eq("patient_id", patientId).order("created_at", { ascending: false })
     : { data: [], error: null };
+  const [{ data: emergencyContacts, error: emergencyContactsError }, { data: emergencyAlerts, error: emergencyAlertsError }, { data: emergencyAllergies, error: emergencyAllergiesError }, { data: emergencyConditions, error: emergencyConditionsError }] = canRead ? await Promise.all([
+    supabase.from("emergency_contacts").select("id,display_name,relationship,phone,priority").eq("patient_id", patientId).order("priority", { ascending: true }).order("display_name", { ascending: true }).limit(20),
+    supabase.from("emergency_alerts").select("id,alert_type,status,created_at,message").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(20),
+    supabase.from("allergies").select("id,substance,reaction").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(50),
+    supabase.from("medical_conditions").select("id,name,status").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(50),
+  ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
   const { data: medicationSchedules, error: medicationSchedulesError } = canRead
     ? await supabase.from("medication_schedules").select("id,medication_id,frequency,administration_times,starts_on,ends_on,status,reminder_enabled").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(100)
     : { data: [], error: null };
@@ -92,6 +99,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     <div className="patient-timeline-layout">
       <div className="account-welcome"><span className="micro-label">{stageLabels[profile.life_stage] ?? "PATIENT"} TIMELINE</span><h1>{profile.display_name}</h1><p>Personal entries for this profile, subject to its current access permissions.</p></div>
       <div className="account-safety-note"><ShieldCheck size={17} /><span>Use fictional data only. Entries are unverified personal notes, not diagnoses, prescriptions, or medical advice.</span></div>
+      {canRead && <PatientEmergencyPanel patientId={patientId} patientName={profile.display_name} dateOfBirth={profile.date_of_birth} conditions={(emergencyConditions ?? []).map((item) => ({ id: item.id, label: item.name }))} allergies={(emergencyAllergies ?? []).map((item) => ({ id: item.id, label: item.substance, detail: item.reaction }))} medications={(medications ?? []).filter((item) => item.status === "active").map((item) => ({ id: item.id, label: item.medicine_name, detail: [item.strength, item.route].filter(Boolean).join(" · ") }))} contacts={emergencyContacts ?? []} alerts={emergencyAlerts ?? []} canWrite={Boolean(canWrite)} contactsError={Boolean(emergencyContactsError)} alertsError={Boolean(emergencyAlertsError)} summaryError={Boolean(emergencyAllergiesError || emergencyConditionsError || medicationsError)} />}
       {canWrite && <HealthEventForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && <SymptomForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && isChildStage && <ChildCareForms patientId={patientId} vaccinationDocuments={(documents ?? []).filter((document) => document.document_type === "vaccination_certificate").map(({ id, display_name }) => ({ id, display_name }))} />}
