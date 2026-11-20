@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(81);
+select extensions.plan(83);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -28,6 +28,7 @@ values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','11111111-1111-4111-8111-111111111111','patient',true,true,'active','11111111-1111-4111-8111-111111111111'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','patient',true,true,'active','22222222-2222-4222-8222-222222222222'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','33333333-3333-4333-8333-333333333333','guardian',true,false,'active','11111111-1111-4111-8111-111111111111'),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','33333333-3333-4333-8333-333333333333','caregiver',true,true,'active','22222222-2222-4222-8222-222222222222'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','44444444-4444-4444-8444-444444444444','doctor',true,true,'active','11111111-1111-4111-8111-111111111111');
 
 insert into public.access_permissions(patient_id,user_id,permission,granted_by)
@@ -161,6 +162,12 @@ with changed as (update public.medication_records set status='historical' where 
 select extensions.is((select count(*) from changed),0::bigint,'patient cannot update another patient medicine-note status');
 reset role;
 select extensions.is((select status from public.medication_records where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'active','unauthorized medicine-note status update leaves the other patient record unchanged');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+with changed as (update public.medication_records set medicine_name='Fictional edited by another caregiver' where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' returning id)
+select extensions.is((select count(*) from changed),0::bigint,'linked caregiver cannot edit another users medicine note');
+reset role;
+select extensions.is((select medicine_name from public.medication_records where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'Fictional patient B medicine','linked caregiver update leaves the medicine note unchanged');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 

@@ -84,6 +84,15 @@ const medicationSchema = z.object({
   visibility: z.enum(["general", "sensitive_adolescent"]),
 });
 
+const medicationDetailsSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  medicineName: z.string().trim().min(2, "Enter the medicine name as written on its package or record.").max(120, "Keep the name under 120 characters."),
+  genericName: z.string().trim().max(120, "Keep the generic name under 120 characters.").optional().default(""),
+  strength: z.string().trim().max(80, "Keep the strength under 80 characters.").optional().default(""),
+  route: z.string().trim().max(80, "Keep the route under 80 characters.").optional().default(""),
+  instructions: z.string().trim().max(500, "Keep the directions under 500 characters.").optional().default(""),
+});
+
 const medicationStatusSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   medicationId: z.string().uuid("Choose a valid medicine note."),
@@ -787,6 +796,29 @@ export async function createMedication(patientId: string, _previous: MedicationF
   return { status: "success", message: "Medicine note saved as unverified." };
 }
 
+export async function updateMedicationDetails(patientId: string, medicationId: string, _previous: MedicationFormState, formData: FormData): Promise<MedicationFormState> {
+  const parsed = medicationDetailsSchema.safeParse({ patientId, medicineName: formData.get("medicineName"), genericName: formData.get("genericName") ?? "", strength: formData.get("strength") ?? "", route: formData.get("route") ?? "", instructions: formData.get("instructions") ?? "" });
+  if (!parsed.success || !z.string().uuid().safeParse(medicationId).success) return { status: "error", message: parsed.success ? "Choose a valid medicine note." : parsed.error.issues[0]?.message ?? "Check the medicine details and try again." };
+
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before editing this medicine note." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You do not have active write access to this profile." };
+  const { data: medication, error: medicationError } = await supabase.from("medication_records").select("id,created_by").eq("id", medicationId).eq("patient_id", patientId).maybeSingle();
+  if (medicationError || !medication || medication.created_by !== user.id) return { status: "error", message: "Only the person who entered this medicine note can edit its details." };
+  const { data, error } = await supabase.from("medication_records").update({
+    medicine_name: parsed.data.medicineName,
+    generic_name: parsed.data.genericName || null,
+    strength: parsed.data.strength || null,
+    route: parsed.data.route || null,
+    instructions: parsed.data.instructions || null,
+  }).eq("id", medicationId).eq("patient_id", patientId).eq("created_by", user.id).select("id").maybeSingle();
+  if (error || !data) return { status: "error", message: "This medicine note could not be updated. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Medicine note details updated. Its status and recorded history were kept." };
+}
+
 export async function createMedicationSchedule(patientId: string, _previous: MedicationFormState, formData: FormData): Promise<MedicationFormState> {
   const parsed = medicationScheduleSchema.safeParse({ patientId, medicationId: formData.get("medicationId"), frequency: formData.get("frequency"), administrationTimes: formData.get("administrationTimes") ?? "", startsOn: formData.get("startsOn") ?? "", endsOn: formData.get("endsOn") ?? "" });
   if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the schedule details and try again." };
@@ -848,6 +880,13 @@ export async function updateMedicationStatus(patientId: string, _previous: Medic
   if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) {
     return { status: "error", message: "You do not have active write access to this profile." };
   }
+
+  const { data: medication, error: medicationError } = await supabase.from("medication_records")
+    .select("id,created_by")
+    .eq("id", parsed.data.medicationId)
+    .eq("patient_id", parsed.data.patientId)
+    .maybeSingle();
+  if (medicationError || !medication || medication.created_by !== user.id) return { status: "error", message: "Only the person who entered this medicine note can change its status." };
 
   const { data, error } = await supabase.from("medication_records")
     .update({ status: parsed.data.status })

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverTask, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, logMedicationAdministration, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverTask, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, logMedicationAdministration, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -761,6 +761,30 @@ describe("medication server action", () => {
     expect(result.message).toMatch(/active write access/i);
     expect(mockSupabase.from).not.toHaveBeenCalledWith("medication_records");
   });
+
+  it("lets the author edit medicine-note details while preserving record status", async () => {
+    const update = updateQuery({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }, error: null });
+    let medicationReads = 0;
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : (medicationReads++ === 0 ? query({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", created_by: "user-1" }, error: null }) : update));
+    const result = await updateMedicationDetails(patientId, "cccccccc-cccc-4ccc-8ccc-cccccccccccc", { status: "idle", message: "" }, medicationForm({ medicineName: "Fictional changed medicine", genericName: "Fictional generic", strength: "10 mg" }));
+    expect(result.status).toBe("success");
+    expect(update.update).toHaveBeenCalledWith(expect.objectContaining({ medicine_name: "Fictional changed medicine", generic_name: "Fictional generic", strength: "10 mg" }));
+    expect(JSON.stringify(update.update.mock.calls)).not.toContain("status");
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+  });
+
+  it("does not let another linked user edit the author's medicine note", async () => {
+    const update = updateQuery({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : query({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", created_by: "different-user" }, error: null }));
+    const result = await updateMedicationDetails(patientId, "cccccccc-cccc-4ccc-8ccc-cccccccccccc", { status: "idle", message: "" }, medicationForm());
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/person who entered/i);
+    expect(update.update).not.toHaveBeenCalled();
+  });
 });
 
 describe("medication schedules and dose event actions", () => {
@@ -829,8 +853,10 @@ describe("medication status server action", () => {
 
   it("updates only the chosen medicine note for the authorized profile", async () => {
     const update = updateQuery({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }, error: null });
+    let medicationReads = 0;
     mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
-      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : update);
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : (medicationReads++ === 0 ? query({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", created_by: "user-1" }, error: null }) : update));
 
     const result = await updateMedicationStatus(patientId, { status: "idle", message: "" }, medicationStatusForm());
 
@@ -852,6 +878,16 @@ describe("medication status server action", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/active write access/i);
     expect(mockSupabase.from).not.toHaveBeenCalledWith("medication_records");
+  });
+
+  it("does not allow a linked user to change another author's medicine status", async () => {
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : query({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", created_by: "different-user" }, error: null }));
+    const result = await updateMedicationStatus(patientId, { status: "idle", message: "" }, medicationStatusForm());
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/person who entered/i);
+    expect(mockSupabase.from).toHaveBeenCalledTimes(2);
   });
 });
 
