@@ -65,6 +65,7 @@ const fieldsByType: Record<RecordType, Field[]> = {
     { name: "status", label: "Observation", type: "select", options: [{ value: "observed", label: "Observed" }, { value: "not_observed", label: "Not observed" }, { value: "follow_up", label: "Follow-up planned" }] },
     { name: "recorded_on", label: "Observation date", type: "date" },
     { name: "follow_up_on", label: "Follow-up date · required when planned", type: "date" },
+    { name: "reminder_enabled", label: "Remind me at 9:00 AM local time on the follow-up date", type: "checkbox" },
     { name: "notes", label: "Caregiver notes", type: "textarea", max: 500 },
   ],
   menstrual: [

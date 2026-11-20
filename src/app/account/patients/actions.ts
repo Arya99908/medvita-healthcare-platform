@@ -307,6 +307,8 @@ const milestoneSchema = z.object({
   status: z.enum(["observed", "not_observed", "follow_up"]),
   recordedOn: z.string().trim().refine(isValidDateOnly, "Enter a valid observation date."),
   followUpOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid follow-up date."),
+  reminderEnabled: z.enum(["on", "off"]).default("off"),
+  reminderTimezone: z.string().trim().min(1).max(64).default("UTC").refine((value) => { try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; } catch { return false; } }, "Choose a valid time zone."),
   notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
 }).superRefine((value, context) => {
   if (value.status === "follow_up" && !value.followUpOn) context.addIssue({ code: "custom", path: ["followUpOn"], message: "Add a follow-up date for this observation." });
@@ -341,7 +343,7 @@ const structuredRecordUpdateSchema = z.discriminatedUnion("recordType", [
     if (value.status === "planned" && !value.due_on) context.addIssue({ code: "custom", path: ["due_on"], message: "Add a due date for a planned vaccination." });
     if ((value.status === "administered") !== Boolean(value.administered_on)) context.addIssue({ code: "custom", path: ["administered_on"], message: "An administered record needs an administered date, and other statuses must not have one." });
   }),
-  structuredRecordBase.extend({ recordType: z.literal("developmental"), milestone_name: z.string().trim().min(2).max(100), domain: z.enum(["motor", "communication", "cognitive", "social_emotional", "self_care", "other"]), status: z.enum(["observed", "not_observed", "follow_up"]), recorded_on: z.string().trim().refine(isValidDateOnly, "Enter a valid observation date."), follow_up_on: dateOnly, notes: nullableText(500) }).superRefine((value, context) => {
+  structuredRecordBase.extend({ recordType: z.literal("developmental"), milestone_name: z.string().trim().min(2).max(100), domain: z.enum(["motor", "communication", "cognitive", "social_emotional", "self_care", "other"]), status: z.enum(["observed", "not_observed", "follow_up"]), recorded_on: z.string().trim().refine(isValidDateOnly, "Enter a valid observation date."), follow_up_on: dateOnly, reminder_enabled: z.enum(["true", "false"]).default("false"), notes: nullableText(500) }).superRefine((value, context) => {
     if (value.status === "follow_up" && !value.follow_up_on) context.addIssue({ code: "custom", path: ["follow_up_on"], message: "Add a follow-up date for this observation." });
   }),
   structuredRecordBase.extend({ recordType: z.literal("menstrual"), period_start: dateOnly, period_end: dateOnly, flow_note: nullableText(500), symptom_note: nullableText(500) }).superRefine((value, context) => {
@@ -760,6 +762,8 @@ export async function createDevelopmentalMilestone(patientId: string, _previous:
     status: formData.get("status"),
     recordedOn: formData.get("recordedOn"),
     followUpOn: formData.get("followUpOn") ?? "",
+    reminderEnabled: formData.get("reminderEnabled") === "on" ? "on" : "off",
+    reminderTimezone: formData.get("reminderTimezone") ?? "UTC",
     notes: formData.get("notes") ?? "",
   });
   if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the observation and try again." };
@@ -780,6 +784,8 @@ export async function createDevelopmentalMilestone(patientId: string, _previous:
     status: parsed.data.status,
     recorded_on: parsed.data.recordedOn,
     follow_up_on: parsed.data.followUpOn || null,
+    reminder_enabled: parsed.data.status === "follow_up" && parsed.data.reminderEnabled === "on",
+    reminder_timezone: parsed.data.reminderTimezone,
     notes: parsed.data.notes || null,
     source,
     verification_status: "unverified",
@@ -814,6 +820,7 @@ async function getStructuredRecordEditor(patientId: string) {
 export async function updateStructuredHealthRecord(_previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
   const values = Object.fromEntries(formData.entries());
   if (values.recordType === "vaccination") values.reminder_enabled = formData.get("reminder_enabled") === "on" ? "true" : "false";
+  if (values.recordType === "developmental") values.reminder_enabled = formData.get("reminder_enabled") === "on" ? "true" : "false";
   const parsed = structuredRecordUpdateSchema.safeParse(values);
   if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the record details and try again." };
   const edit = await getStructuredRecordEditor(parsed.data.patientId);
@@ -867,7 +874,7 @@ export async function updateStructuredHealthRecord(_previous: CareLogFormState, 
       failed = Boolean(error || !data); break;
     }
     case "developmental": {
-      const { error, data } = await edit.supabase.from("developmental_milestones").update({ milestone_name: parsed.data.milestone_name, domain: parsed.data.domain, status: parsed.data.status, recorded_on: parsed.data.recorded_on, follow_up_on: parsed.data.follow_up_on || null, notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle();
+      const { error, data } = await edit.supabase.from("developmental_milestones").update({ milestone_name: parsed.data.milestone_name, domain: parsed.data.domain, status: parsed.data.status, recorded_on: parsed.data.recorded_on, follow_up_on: parsed.data.follow_up_on || null, reminder_enabled: parsed.data.reminder_enabled === "true", notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle();
       failed = Boolean(error || !data); break;
     }
     case "menstrual": {

@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(223);
+select extensions.plan(227);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -202,6 +202,11 @@ select extensions.is((select title || ' ' || message from public.notifications w
 update public.vaccination_records set reminder_enabled=false where vaccine_name='Fictional sample vaccine';
 select extensions.is((select delivery_status from public.notifications where user_id='33333333-3333-4333-8333-333333333333' and category='vaccination_reminder'),'cancelled','turning off the record reminder cancels its queued notification');
 select extensions.lives_ok($$insert into public.developmental_milestones(patient_id,milestone_name,domain,status,recorded_on,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Fictional sample observation','motor','observed','2026-11-20','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can record a child milestone observation');
+select extensions.lives_ok($$insert into public.developmental_milestones(patient_id,milestone_name,domain,status,recorded_on,follow_up_on,reminder_enabled,reminder_timezone,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Fictional follow-up observation','motor','follow_up','2026-11-20','2026-12-01',true,'Asia/Kolkata','caregiver','33333333-3333-4333-8333-333333333333')$$,'caregiver can opt in to a reminder for an explicitly entered follow-up date');
+select extensions.is((select count(*) from public.notifications where user_id='33333333-3333-4333-8333-333333333333' and category='developmental_follow_up_reminder' and delivery_status='queued'),1::bigint,'opted-in child follow-up date schedules a private in-app reminder');
+select extensions.is((select title || ' ' || message from public.notifications where user_id='33333333-3333-4333-8333-333333333333' and category='developmental_follow_up_reminder'),'Care follow-up date reminder A follow-up date you entered is coming up. Review the child profile for details.','child follow-up reminder text does not expose milestone or note details');
+update public.developmental_milestones set status='observed' where milestone_name='Fictional follow-up observation';
+select extensions.is((select delivery_status from public.notifications where user_id='33333333-3333-4333-8333-333333333333' and category='developmental_follow_up_reminder'),'cancelled','changing a planned follow-up to observed cancels its queued reminder');
 select extensions.throws_ok($$insert into public.developmental_milestones(patient_id,milestone_name,domain,status,recorded_on,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional sample observation','motor','observed','2026-11-20','caregiver','33333333-3333-4333-8333-333333333333')$$,'42501',null,'milestone observations cannot be added to adult profiles');
 select extensions.throws_ok($$insert into public.developmental_milestones(patient_id,milestone_name,domain,status,recorded_on,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Fictional follow-up','communication','follow_up','2026-11-20','caregiver','33333333-3333-4333-8333-333333333333')$$,'23514',null,'a planned milestone follow-up requires a follow-up date');
 reset role;

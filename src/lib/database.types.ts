@@ -669,6 +669,8 @@ export type Database = {
           milestone_name: string
           notes: string | null
           patient_id: string
+          reminder_enabled: boolean
+          reminder_timezone: string
           recorded_on: string
           source: string
           status: string
@@ -683,6 +685,8 @@ export type Database = {
           milestone_name: string
           notes?: string | null
           patient_id: string
+          reminder_enabled?: boolean
+          reminder_timezone?: string
           recorded_on?: string
           source?: string
           status: string
@@ -697,6 +701,8 @@ export type Database = {
           milestone_name?: string
           notes?: string | null
           patient_id?: string
+          reminder_enabled?: boolean
+          reminder_timezone?: string
           recorded_on?: string
           source?: string
           status?: string

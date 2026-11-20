@@ -89,14 +89,16 @@ export default function ChildCareForms({ patientId, vaccinationDocuments = [] }:
     </details>
     <details className="account-card account-entry-disclosure">
       <summary className="account-card-heading"><div><span className="micro-label">DEVELOPMENT NOTES</span><h2>Record an observation</h2><p>Enter what you observed. The app does not assess development or compare with age norms.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></summary>
-      <form ref={milestoneFormRef} action={milestoneAction} className="account-profile-form timeline-form">
+      <form ref={milestoneFormRef} action={milestoneAction} className="account-profile-form timeline-form" onSubmit={(event) => { const timezone = event.currentTarget.elements.namedItem("reminderTimezone"); if (timezone instanceof HTMLInputElement) timezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; }}>
         <label htmlFor="milestone-name">Milestone or observation</label><input id="milestone-name" name="milestoneName" minLength={2} maxLength={100} required />
         <label htmlFor="milestone-domain">Area</label><select id="milestone-domain" name="domain" defaultValue="motor"><option value="motor">Movement</option><option value="communication">Communication</option><option value="cognitive">Thinking and learning</option><option value="social_emotional">Social and emotional</option><option value="self_care">Self-care</option><option value="other">Other</option></select>
         <label htmlFor="milestone-status">Observation</label><select id="milestone-status" name="status" defaultValue="observed"><option value="observed">Observed</option><option value="not_observed">Not observed</option><option value="follow_up">Follow-up planned</option></select>
         <label htmlFor="milestone-recorded">Observation date</label><input id="milestone-recorded" name="recordedOn" type="date" required />
         <label htmlFor="milestone-follow-up">Follow-up date <span>(required when follow-up is planned)</span></label><input id="milestone-follow-up" name="followUpOn" type="date" />
+        <input type="hidden" name="reminderTimezone" defaultValue="UTC" />
+        <label className="checkbox-field"><input type="checkbox" name="reminderEnabled" value="on" /> Remind me in MedVita on this date at 9:00 AM</label>
         <label htmlFor="milestone-notes">Caregiver notes <span>(optional)</span></label><textarea id="milestone-notes" name="notes" maxLength={500} rows={2} />
-        <p className="timeline-privacy-note">This is a caregiver record, not a developmental screening. Discuss questions or concerns with the child&apos;s clinician; this prototype does not send follow-up reminders.</p>
+        <p className="timeline-privacy-note">This is a caregiver record, not a developmental screening. Discuss questions or concerns with the child&apos;s clinician. Reminders are optional and only use dates you enter.</p>
         {milestoneState.message && <p className={`account-form-message ${milestoneState.status}`} role="status">{milestoneState.status === "success" && <Check size={15} />}{milestoneState.message}</p>}
         <button className="primary-button account-submit" type="submit" disabled={milestonePending}><Plus size={16} />{milestonePending ? "Saving…" : "Save observation"}</button>
       </form>

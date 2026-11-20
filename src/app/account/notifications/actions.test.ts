@@ -75,4 +75,15 @@ describe("notification actions", () => {
 
     expect(query.upsert).toHaveBeenCalledWith(expect.objectContaining({ user_id: userId, category: "vaccination_reminder", channel: "in_app", enabled: false }), { onConflict: "user_id,category,channel" });
   });
+
+  it("accepts the caregiver follow-up reminder preference", async () => {
+    const query = { upsert: vi.fn().mockResolvedValue({ error: null }) };
+    supabase.auth.getUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
+    supabase.from.mockReturnValue(query);
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+
+    await updateNotificationPreference(form({ category: "developmental_follow_up_reminder", enabled: "false" }));
+
+    expect(query.upsert).toHaveBeenCalledWith(expect.objectContaining({ user_id: userId, category: "developmental_follow_up_reminder", channel: "in_app", enabled: false }), { onConflict: "user_id,category,channel" });
+  });
 });

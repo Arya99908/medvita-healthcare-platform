@@ -137,7 +137,7 @@ function vaccinationForm(values: Record<string, string> = {}) {
 
 function milestoneForm(values: Record<string, string> = {}) {
   const form = new FormData();
-  for (const [key, value] of Object.entries({ milestoneName: "Fictional sample observation", domain: "motor", status: "observed", recordedOn: "2026-11-20", followUpOn: "", notes: "Caregiver-entered fictional note", ...values })) form.set(key, value);
+  for (const [key, value] of Object.entries({ milestoneName: "Fictional sample observation", domain: "motor", status: "observed", recordedOn: "2026-11-20", followUpOn: "", reminderEnabled: "off", reminderTimezone: "Asia/Kolkata", notes: "Caregiver-entered fictional note", ...values })) form.set(key, value);
   return form;
 }
 
@@ -725,7 +725,16 @@ describe("child developmental milestone server action", () => {
       : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
     const result = await createDevelopmentalMilestone(patientId, { status: "idle", message: "" }, milestoneForm({ status: "follow_up", followUpOn: "2026-12-01" }));
     expect(result.status).toBe("success");
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, milestone_name: "Fictional sample observation", domain: "motor", status: "follow_up", recorded_on: "2026-11-20", follow_up_on: "2026-12-01", source: "caregiver", verification_status: "unverified", created_by: "user-1" }));
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, milestone_name: "Fictional sample observation", domain: "motor", status: "follow_up", recorded_on: "2026-11-20", follow_up_on: "2026-12-01", reminder_enabled: false, reminder_timezone: "Asia/Kolkata", source: "caregiver", verification_status: "unverified", created_by: "user-1" }));
+  });
+
+  it("opts in only when the caregiver asks for a follow-up reminder", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    await createDevelopmentalMilestone(patientId, { status: "idle", message: "" }, milestoneForm({ status: "follow_up", followUpOn: "2026-12-01", reminderEnabled: "on" }));
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ reminder_enabled: true, reminder_timezone: "Asia/Kolkata" }));
   });
 
   it("requires a follow-up date when follow-up is planned", async () => {
