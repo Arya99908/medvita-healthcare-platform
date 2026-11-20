@@ -346,6 +346,16 @@ const hospitalAdmissionSchema = z.object({
   }
 });
 
+const laboratoryResultSchema = z.object({
+  testName: z.string().trim().min(2, "Enter the test name as written on the report.").max(120, "Keep the test name under 120 characters."),
+  valueText: z.string().trim().min(1, "Enter the result as written on the report.").max(160, "Keep the result under 160 characters."),
+  unit: z.string().trim().max(40, "Keep the unit under 40 characters.").optional().default(""),
+  referenceRange: z.string().trim().max(120, "Keep the reference range under 120 characters.").optional().default(""),
+  resultDate: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid report date."),
+  documentId: z.union([z.literal(""), z.string().uuid("Choose a valid report document.")]).optional().default(""),
+  visibility: z.enum(["general", "sensitive_adolescent"]),
+});
+
 const structuredRecordBase = z.object({
   patientId: z.string().uuid("Choose a valid profile."),
   recordId: z.string().uuid("Choose a valid record."),
@@ -773,6 +783,46 @@ export async function createHospitalAdmission(patientId: string, _previous: Care
   if (error) return { status: "error", message: "The admission could not be saved. Check profile access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Admission saved as an unverified patient or caregiver report." };
+}
+
+export async function createLaboratoryResult(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = laboratoryResultSchema.safeParse({
+    testName: formData.get("testName"), valueText: formData.get("valueText"), unit: formData.get("unit") ?? "",
+    referenceRange: formData.get("referenceRange") ?? "", resultDate: formData.get("resultDate") ?? "",
+    documentId: formData.get("documentId") ?? "", visibility: formData.get("visibility") ?? "general",
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the test result details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving this test result." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships")
+    .select("status,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_write) return { status: "error", message: "Active write access is required to add a test result to this profile." };
+  if (parsed.data.visibility === "sensitive_adolescent") {
+    const { data: profile, error: profileError } = await supabase.from("patient_profiles").select("life_stage").eq("id", patientId).maybeSingle();
+    if (profileError || profile?.life_stage !== "adolescent") return { status: "error", message: "Sensitive visibility is available only for an adolescent profile." };
+  }
+  if (parsed.data.documentId) {
+    const { data: document, error: documentError } = await supabase.from("medical_documents").select("id")
+      .eq("id", parsed.data.documentId).eq("patient_id", patientId).eq("upload_status", "uploaded")
+      .eq("document_type", "test_result").eq("visibility", parsed.data.visibility).maybeSingle();
+    if (documentError || !document) return { status: "error", message: "Choose an uploaded test report from this profile with matching privacy." };
+  }
+  const { error } = await supabase.from("laboratory_results").insert({
+    patient_id: patientId,
+    test_name: parsed.data.testName,
+    value_text: parsed.data.valueText,
+    unit: parsed.data.unit || null,
+    reference_range: parsed.data.referenceRange || null,
+    result_date: parsed.data.resultDate || null,
+    document_id: parsed.data.documentId || null,
+    verification_status: "unverified",
+    visibility: parsed.data.visibility,
+    created_by: user.id,
+  });
+  if (error) return { status: "error", message: "The test result could not be saved. Check profile access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Result saved as an unverified entry; MedVita does not interpret the value or range." };
 }
 
 export async function createMenstrualRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {

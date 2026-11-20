@@ -28,6 +28,7 @@ import HealthEventControls from "../health-event-controls";
 import StructuredRecordControls from "../structured-record-controls";
 import SeniorCareOverview from "../senior-care-overview";
 import HospitalHistory from "../hospital-history";
+import LaboratoryResults from "../laboratory-results";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
 
@@ -100,6 +101,9 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     supabase.from("hospital_visits").select("id,visit_date,visit_type,facility_name,provider_name,notes,visibility").eq("patient_id", patientId).order("visit_date", { ascending: false }).limit(100),
     supabase.from("hospital_admissions").select("id,admitted_at,discharged_at,facility_name,summary,discharge_document_id,visibility").eq("patient_id", patientId).order("admitted_at", { ascending: false }).limit(100),
   ]) : [{ data: [], error: null }, { data: [], error: null }];
+  const { data: laboratoryResults, error: laboratoryResultsError } = canRead
+    ? await supabase.from("laboratory_results").select("id,test_name,value_text,unit,reference_range,result_date,document_id,verification_status,visibility").eq("patient_id", patientId).order("result_date", { ascending: false, nullsFirst: false }).limit(100)
+    : { data: [], error: null };
   const { data: medications, error: medicationsError } = canRead
     ? await supabase.from("medication_records").select("id,medicine_name,generic_name,strength,route,instructions,status,visibility,created_by,created_at").eq("patient_id", patientId).order("created_at", { ascending: false })
     : { data: [], error: null };
@@ -173,6 +177,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       {canRead && (wellnessPlansError || wellnessEntriesError) && <p className="account-form-message error" role="status">Some wellness records could not be loaded. The database still controls access to available records.</p>}
       {canRead && <PatientEmergencyPanel patientId={patientId} patientName={profile.display_name} dateOfBirth={profile.date_of_birth} conditions={(emergencyConditions ?? []).map((item) => ({ id: item.id, label: item.name }))} allergies={(emergencyAllergies ?? []).map((item) => ({ id: item.id, label: item.substance, detail: item.reaction }))} medications={(medications ?? []).filter((item) => item.status === "active").map((item) => ({ id: item.id, label: item.medicine_name, detail: [item.strength, item.route].filter(Boolean).join(" · ") }))} contacts={emergencyContacts ?? []} alerts={emergencyAlerts ?? []} canWrite={Boolean(canWrite)} contactsError={Boolean(emergencyContactsError)} alertsError={Boolean(emergencyAlertsError)} summaryError={Boolean(emergencyAllergiesError || emergencyConditionsError || medicationsError)} />}
       {canRead && <HospitalHistory patientId={patientId} lifeStage={profile.life_stage} visits={(hospitalVisits ?? []) as NonNullable<typeof hospitalVisits>} admissions={(hospitalAdmissions ?? []) as NonNullable<typeof hospitalAdmissions>} documents={(documents ?? []).filter((document) => document.upload_status === "uploaded").map(({ id, display_name, visibility }) => ({ id, display_name, visibility }))} canWrite={Boolean(canWrite)} loadError={Boolean(hospitalVisitsError || hospitalAdmissionsError)} />}
+      {canRead && <LaboratoryResults patientId={patientId} lifeStage={profile.life_stage} results={(laboratoryResults ?? []) as NonNullable<typeof laboratoryResults>} documents={(documents ?? []).filter((document) => document.upload_status === "uploaded").map(({ id, display_name, visibility, document_type }) => ({ id, display_name, visibility, document_type }))} canWrite={Boolean(canWrite)} loadError={Boolean(laboratoryResultsError)} />}
       {canRead && <CaregiverHandoverPanel patientId={patientId} currentUserId={user.id} lifeStage={profile.life_stage} recipients={handoverRecipients ?? []} handovers={handovers ?? []} canWrite={Boolean(canWrite)} loadError={Boolean(handoversError || handoverRecipientsError)} />}
       {canInviteCaregiver && <InvitationPanel patientId={patientId} invitations={invitations ?? []} relationships={inviteRelationships ?? []} loadError={Boolean(invitationsError || inviteRelationshipsError)} />}
       {canWrite && <HealthEventForm patientId={patientId} lifeStage={profile.life_stage} />}

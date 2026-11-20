@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createHospitalAdmission, createHospitalVisit, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, deleteStructuredHealthRecord, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, setCaregiverAvailability, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, updateStructuredHealthRecord, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createHospitalAdmission, createHospitalVisit, createLaboratoryResult, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, deleteStructuredHealthRecord, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, setCaregiverAvailability, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, updateStructuredHealthRecord, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -717,6 +717,51 @@ describe("hospital history actions", () => {
     mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationQuery()
       : table === "patient_profiles" ? query({ data: { life_stage: "adult" }, error: null }) : { insert });
     const result = await createHospitalVisit(patientId, { status: "idle", message: "" }, visitForm({ visibility: "sensitive_adolescent" }));
+    expect(result).toEqual({ status: "error", message: "Sensitive visibility is available only for an adolescent profile." });
+    expect(insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("laboratory result action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "writer-user" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  const relationQuery = () => query({ data: { status: "active", can_write: true }, error: null });
+  const resultForm = (values: Record<string, string> = {}) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries({ testName: "Fictional test", valueText: "5.4", unit: "mmol/L", referenceRange: "4.0 to 6.0 as printed", resultDate: "2026-11-19", documentId: "", visibility: "general", ...values })) form.set(key, value);
+    return form;
+  };
+
+  it("stores report text as unverified without interpreting it", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationQuery() : { insert });
+    const result = await createLaboratoryResult(patientId, { status: "idle", message: "" }, resultForm());
+    expect(result).toEqual({ status: "success", message: "Result saved as an unverified entry; MedVita does not interpret the value or range." });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, test_name: "Fictional test", value_text: "5.4", unit: "mmol/L", reference_range: "4.0 to 6.0 as printed", result_date: "2026-11-19", verification_status: "unverified", visibility: "general", created_by: "writer-user" }));
+  });
+
+  it("requires a matching uploaded test-result file when a document is linked", async () => {
+    const documentId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const documentQuery = query({ data: null, error: null });
+    const insert = vi.fn();
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationQuery()
+      : table === "medical_documents" ? documentQuery : { insert });
+    const result = await createLaboratoryResult(patientId, { status: "idle", message: "" }, resultForm({ documentId }));
+    expect(result.status).toBe("error");
+    expect(documentQuery.eq).toHaveBeenCalledWith("document_type", "test_result");
+    expect(documentQuery.eq).toHaveBeenCalledWith("visibility", "general");
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("limits sensitive visibility to adolescent profiles", async () => {
+    const insert = vi.fn();
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationQuery()
+      : table === "patient_profiles" ? query({ data: { life_stage: "senior" }, error: null }) : { insert });
+    const result = await createLaboratoryResult(patientId, { status: "idle", message: "" }, resultForm({ visibility: "sensitive_adolescent" }));
     expect(result).toEqual({ status: "error", message: "Sensitive visibility is available only for an adolescent profile." });
     expect(insert).not.toHaveBeenCalled();
   });

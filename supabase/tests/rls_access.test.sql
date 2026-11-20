@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(242);
+select extensions.plan(247);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -256,8 +256,13 @@ select extensions.lives_ok($$insert into public.hospital_admissions(id,patient_i
 select extensions.is((select count(*) from public.hospital_visits where id='15151515-1515-4151-8151-151515151515'),1::bigint,'authorized profile writer can read saved hospital visit history');
 select extensions.is((select count(*) from public.hospital_admissions where id='16161616-1616-4161-8161-161616161616'),1::bigint,'authorized profile writer can read saved hospital admission history');
 select extensions.is((select count(*) from public.patient_activity_events where resource_type in ('hospital_visits','hospital_admissions') and action='record_added'),2::bigint,'hospital visits and admissions appear in the privacy-filtered care activity feed');
+select extensions.lives_ok($$insert into public.laboratory_results(id,patient_id,test_name,value_text,unit,reference_range,result_date,created_by) values('17171717-1717-4171-8171-171717171717','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional lab test','5.4','mmol/L','As printed: 4.0 to 6.0','2026-11-19','22222222-2222-4222-8222-222222222222')$$,'profile writer can save a self-reported laboratory result');
+select extensions.is((select count(*) from public.laboratory_results where id='17171717-1717-4171-8171-171717171717' and verification_status='unverified'),1::bigint,'saved laboratory result remains unverified');
+select extensions.is((select count(*) from public.patient_activity_events where resource_type='laboratory_results' and action='record_added'),1::bigint,'laboratory result appears in the privacy-filtered care activity feed');
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select extensions.is((select count(*) from public.hospital_visits where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')+(select count(*) from public.hospital_admissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'unrelated account cannot read another profile hospital history');
+select extensions.is((select count(*) from public.laboratory_results where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'unrelated account cannot read another profile laboratory results');
+select extensions.throws_ok($$insert into public.laboratory_results(patient_id,test_name,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional unauthorized lab result','11111111-1111-4111-8111-111111111111')$$,'42501',null,'unrelated account cannot add a laboratory result to another profile');
 select extensions.throws_ok($$insert into public.hospital_visits(patient_id,visit_date,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-11-18 05:00:00+00','11111111-1111-4111-8111-111111111111')$$,'42501',null,'unrelated account cannot add a hospital visit to another profile');
 select extensions.throws_ok($$insert into public.hospital_admissions(patient_id,admitted_at,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-11-18 05:00:00+00','11111111-1111-4111-8111-111111111111')$$,'42501',null,'unrelated account cannot add a hospital admission to another profile');
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
