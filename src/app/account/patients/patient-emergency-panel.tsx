@@ -52,8 +52,8 @@ export default function PatientEmergencyPanel({ patientId, patientName, dateOfBi
     }, (error) => setLocationMessage(error.code === error.PERMISSION_DENIED ? "Location permission was declined. You can still call emergency services manually." : "Could not get this device’s current location. You can still call emergency services manually."), { enableHighAccuracy: false, timeout: 10_000, maximumAge: 30_000 });
   };
 
-  return <section className="account-card patient-emergency-panel" aria-labelledby="patient-emergency-title">
-    <div className="account-card-heading"><div><span className="micro-label">EMERGENCY ACCESS</span><h2 id="patient-emergency-title">Emergency help for {patientName}</h2><p>Calls and location sharing require your explicit action on this device.</p></div><span className="account-card-icon emergency-icon"><Siren size={18} /></span></div>
+  return <section id="patient-emergency-title" className="account-card patient-emergency-panel" aria-labelledby="patient-emergency-heading">
+    <div className="account-card-heading"><div><span className="micro-label">EMERGENCY ACCESS</span><h2 id="patient-emergency-heading">Emergency help for {patientName}</h2><p>Calls and location sharing require your explicit action on this device.</p></div><span className="account-card-icon emergency-icon"><Siren size={18} /></span></div>
     <div className="emergency-action-disclaimer"><AlertTriangle size={17} /><span>This app cannot dispatch an ambulance or notify contacts. If this may be an emergency, call the appropriate local service now.</span></div>
     {canWrite && <form action={alertAction} className="emergency-record-form">
       <strong>Record an emergency action</strong><p>This adds a private history entry only; it does not start a call or send a notification.</p>

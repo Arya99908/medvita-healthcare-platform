@@ -26,6 +26,7 @@ import PatientAISummary from "../patient-ai-summary";
 import WellnessCenter from "../wellness-center";
 import HealthEventControls from "../health-event-controls";
 import StructuredRecordControls from "../structured-record-controls";
+import SeniorCareOverview from "../senior-care-overview";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
 
@@ -57,6 +58,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     : { data: [], error: null };
   const isChildStage = ["infant", "child"].includes(profile.life_stage);
   const isAdultStage = ["adult", "senior"].includes(profile.life_stage);
+  const isSeniorStage = profile.life_stage === "senior";
   const isAdolescentStage = profile.life_stage === "adolescent";
   const canInviteCaregiver = Boolean(canWrite && relationship?.relationship_role === "patient" && isAdultStage);
   const [{ data: feedings, error: feedingsError }, { data: bowelRecords, error: bowelRecordsError }, { data: vomitingRecords, error: vomitingRecordsError }, { data: growthRecords, error: growthRecordsError }, { data: urinationRecords, error: urinationRecordsError }, { data: sleepRecords, error: sleepRecordsError }, { data: vaccinations, error: vaccinationsError }, { data: milestones, error: milestonesError }] = canRead && isChildStage ? await Promise.all([
@@ -81,6 +83,9 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   const { data: assignableCaregivers } = canWrite && isAdultStage
     ? await supabase.from("patient_relationships").select("user_id,relationship_role").eq("patient_id", patientId).eq("status", "active").eq("can_read", true).eq("can_write", true).neq("user_id", user.id).in("relationship_role", ["caregiver", "family_member", "guardian", "nurse"])
     : { data: [] };
+  const { data: seniorCareTeam, error: seniorCareTeamError } = canRead && isSeniorStage
+    ? await supabase.from("patient_relationships").select("user_id,relationship_role").eq("patient_id", patientId).eq("status", "active").eq("can_read", true).neq("relationship_role", "patient").in("relationship_role", ["caregiver", "family_member", "guardian", "nurse"])
+    : { data: [], error: null };
   const { data: menstrualRecords, error: menstrualRecordsError } = canRead && isAdolescentStage
     ? await supabase.from("menstrual_records").select("id,period_start,period_end,flow_note,symptom_note,created_at,created_by").eq("patient_id", patientId).order("period_start", { ascending: false }).limit(50)
     : { data: [], error: null };
@@ -155,6 +160,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       <div className="account-welcome"><span className="micro-label">{stageLabels[profile.life_stage] ?? "PATIENT"} TIMELINE</span><h1>{profile.display_name}</h1><p>Personal entries for this profile, subject to its current access permissions.</p>{canRead && <Link className="account-record-link" href={`/account/patients/${patientId}/reports`}><ChartNoAxesCombined size={15} /> Health reports</Link>}</div>
       <div className="account-safety-note"><ShieldCheck size={17} /><span>Use fictional data only. Entries are unverified personal notes, not diagnoses, prescriptions, or medical advice.</span></div>
       {canRead && <PatientAISummary patientId={patientId} enabled={canGenerateAISummary} reports={aiReportsWithSources ?? []} loadError={Boolean(aiReportsError || aiSourcesError || aiReviewsError)} />}
+      {canRead && isSeniorStage && <SeniorCareOverview patientId={patientId} conditions={(medicalConditions ?? []).map(({ name, status }) => ({ name, status }))} tasks={(careTasks ?? []).map(({ id, title, status, due_at }) => ({ id, title, status, due_at }))} medications={(medications ?? []).map(({ id, medicine_name, status }) => ({ id, medicine_name, status }))} schedules={(medicationSchedules ?? []).map(({ medication_id, frequency, administration_times, status }) => ({ medication_id, frequency, administration_times, status }))} symptoms={(symptoms ?? []).slice(0, 4).map(({ id, symptom, severity, observed_at }) => ({ id, symptom, severity, observed_at }))} appointments={(appointments ?? []).slice(0, 100).map(({ id, title, event_type, status, starts_at }) => ({ id, title, event_type, status, starts_at }))} caregiverCount={new Set((seniorCareTeam ?? []).map(({ user_id }) => user_id)).size} caregiverRoles={(seniorCareTeam ?? []).map(({ relationship_role }) => relationship_role)} alerts={(emergencyAlerts ?? []).map(({ id, alert_type, status, created_at }) => ({ id, alert_type, status, created_at }))} loadErrors={{ conditions: Boolean(medicalConditionsError), tasks: Boolean(careTasksError), medications: Boolean(medicationsError || medicationSchedulesError), symptoms: Boolean(symptomsError), appointments: Boolean(appointmentsError), caregivers: Boolean(seniorCareTeamError), alerts: Boolean(emergencyAlertsError) }} />}
       {canRead && <WellnessCenter patientId={patientId} lifeStage={profile.life_stage as "infant" | "child" | "adolescent" | "adult" | "senior"} canWrite={Boolean(canWrite)} plans={wellnessPlans ?? []} entries={wellnessEntries ?? []} entriesTruncated={(wellnessEntryCount ?? 0) > (wellnessEntries?.length ?? 0)} conditions={(emergencyConditions ?? []).map((item) => ({ name: item.name }))} allergies={(emergencyAllergies ?? []).map((item) => ({ name: item.substance }))} />}
       {canRead && (wellnessPlansError || wellnessEntriesError) && <p className="account-form-message error" role="status">Some wellness records could not be loaded. The database still controls access to available records.</p>}
       {canRead && <PatientEmergencyPanel patientId={patientId} patientName={profile.display_name} dateOfBirth={profile.date_of_birth} conditions={(emergencyConditions ?? []).map((item) => ({ id: item.id, label: item.name }))} allergies={(emergencyAllergies ?? []).map((item) => ({ id: item.id, label: item.substance, detail: item.reaction }))} medications={(medications ?? []).filter((item) => item.status === "active").map((item) => ({ id: item.id, label: item.medicine_name, detail: [item.strength, item.route].filter(Boolean).join(" · ") }))} contacts={emergencyContacts ?? []} alerts={emergencyAlerts ?? []} canWrite={Boolean(canWrite)} contactsError={Boolean(emergencyContactsError)} alertsError={Boolean(emergencyAlertsError)} summaryError={Boolean(emergencyAllergiesError || emergencyConditionsError || medicationsError)} />}
