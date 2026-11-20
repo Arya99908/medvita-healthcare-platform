@@ -121,9 +121,13 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   const { data: aiSources, error: aiSourcesError } = aiReportIds.length > 0
     ? await supabase.from("ai_analysis_sources").select("id,report_id,source_label,source_date").in("report_id", aiReportIds).eq("visibility", "general").order("source_date", { ascending: true }).limit(200)
     : { data: [], error: null };
+  const { data: aiReviews, error: aiReviewsError } = aiReportIds.length > 0
+    ? await supabase.from("ai_report_reviews").select("id,report_id,review_outcome,review_note,created_at").in("report_id", aiReportIds).order("created_at", { ascending: false })
+    : { data: [], error: null };
   const aiReportsWithSources = (aiReports ?? []).map((report) => ({
     ...report,
     sources: (aiSources ?? []).filter((source) => source.report_id === report.id),
+    reviews: (aiReviews ?? []).filter((review) => review.report_id === report.id),
   }));
 
   return <main className="account-page">
@@ -131,7 +135,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     <div className="patient-timeline-layout">
       <div className="account-welcome"><span className="micro-label">{stageLabels[profile.life_stage] ?? "PATIENT"} TIMELINE</span><h1>{profile.display_name}</h1><p>Personal entries for this profile, subject to its current access permissions.</p>{canRead && <Link className="account-record-link" href={`/account/patients/${patientId}/reports`}><ChartNoAxesCombined size={15} /> Health reports</Link>}</div>
       <div className="account-safety-note"><ShieldCheck size={17} /><span>Use fictional data only. Entries are unverified personal notes, not diagnoses, prescriptions, or medical advice.</span></div>
-      {canRead && <PatientAISummary patientId={patientId} enabled={canGenerateAISummary} reports={aiReportsWithSources ?? []} loadError={Boolean(aiReportsError || aiSourcesError)} />}
+      {canRead && <PatientAISummary patientId={patientId} enabled={canGenerateAISummary} reports={aiReportsWithSources ?? []} loadError={Boolean(aiReportsError || aiSourcesError || aiReviewsError)} />}
       {canRead && <PatientEmergencyPanel patientId={patientId} patientName={profile.display_name} dateOfBirth={profile.date_of_birth} conditions={(emergencyConditions ?? []).map((item) => ({ id: item.id, label: item.name }))} allergies={(emergencyAllergies ?? []).map((item) => ({ id: item.id, label: item.substance, detail: item.reaction }))} medications={(medications ?? []).filter((item) => item.status === "active").map((item) => ({ id: item.id, label: item.medicine_name, detail: [item.strength, item.route].filter(Boolean).join(" · ") }))} contacts={emergencyContacts ?? []} alerts={emergencyAlerts ?? []} canWrite={Boolean(canWrite)} contactsError={Boolean(emergencyContactsError)} alertsError={Boolean(emergencyAlertsError)} summaryError={Boolean(emergencyAllergiesError || emergencyConditionsError || medicationsError)} />}
       {canRead && <CaregiverHandoverPanel patientId={patientId} currentUserId={user.id} lifeStage={profile.life_stage} recipients={handoverRecipients ?? []} handovers={handovers ?? []} canWrite={Boolean(canWrite)} loadError={Boolean(handoversError || handoverRecipientsError)} />}
       {canInviteCaregiver && <InvitationPanel patientId={patientId} invitations={invitations ?? []} relationships={inviteRelationships ?? []} loadError={Boolean(invitationsError || inviteRelationshipsError)} />}

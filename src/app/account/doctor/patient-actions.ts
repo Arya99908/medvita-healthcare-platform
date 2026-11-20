@@ -21,6 +21,7 @@ const noteSchema = z.object({
 });
 
 export type ClinicalNoteState = { status: "idle" | "error" | "success"; message: string };
+export type AIReportReviewState = { status: "idle" | "error" | "success"; message: string };
 
 function isValidDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -62,4 +63,40 @@ export async function createClinicalNote(_previous: ClinicalNoteState, formData:
   revalidatePath(`/account/doctor/patients/${parsed.data.patientId}`);
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Clinician-authored note added to the patient record." };
+}
+
+const aiReviewSchema = z.object({
+  patientId: z.string().uuid(),
+  reportId: z.string().uuid(),
+  outcome: z.enum(["reviewed", "needs_correction", "rejected"]),
+  note: z.string().trim().min(1).max(4000),
+});
+
+export async function createAIReportReview(_previous: AIReportReviewState, formData: FormData): Promise<AIReportReviewState> {
+  const parsed = aiReviewSchema.safeParse({
+    patientId: formData.get("patientId"),
+    reportId: formData.get("reportId"),
+    outcome: formData.get("outcome"),
+    note: formData.get("note"),
+  });
+  if (!parsed.success) return { status: "error", message: "Choose an outcome and add a review note." };
+
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again to review this summary." };
+  const { data: doctor, error: doctorError } = await supabase.from("doctors").select("verification_status").eq("user_id", user.id).maybeSingle();
+  if (doctorError || doctor?.verification_status !== "verified") return { status: "error", message: "A verified clinician account is required." };
+
+  const { data, error } = await supabase.from("ai_report_reviews").insert({
+    patient_id: parsed.data.patientId,
+    report_id: parsed.data.reportId,
+    doctor_user_id: user.id,
+    review_outcome: parsed.data.outcome,
+    review_note: parsed.data.note,
+  }).select("id").maybeSingle();
+  if (error || !data) return { status: "error", message: "Review could not be saved. Check that the patient has granted active clinician-note consent." };
+
+  revalidatePath(`/account/doctor/patients/${parsed.data.patientId}`);
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  return { status: "success", message: "Clinician review added to the summary history." };
 }

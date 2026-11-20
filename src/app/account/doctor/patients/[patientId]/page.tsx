@@ -4,7 +4,10 @@ import { ArrowLeft, CalendarDays, FileText, HeartPulse, Pill, ShieldCheck, Steth
 import LocalDateTime from "@/components/local-date-time";
 import { createClient } from "@/lib/supabase/server";
 import ClinicalNoteForm from "../../clinical-note-form";
+import AISummaryReviewForm from "../../ai-summary-review-form";
 import { signOut } from "../../../actions";
+import { patientSummarySchema } from "@/lib/ai/patient-summary";
+import type { Json } from "@/lib/database.types";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
 const noteKindLabels: Record<string, string> = { consultation: "Consultation summary", treatment_plan: "Care plan note", follow_up: "Follow-up recommendation", addendum: "Correction or addendum" };
@@ -28,28 +31,52 @@ export default async function DoctorPatientPage({ params }: { params: Promise<{ 
     || relationship.status !== "active" || !relationship.can_read) notFound();
 
   const canAppendNotes = (permissions ?? []).some((permission) => permission.permission === "clinical_notes" && !permission.revoked_at);
-  const [{ data: events, error: eventsError }, { data: symptoms, error: symptomsError }, { data: medications, error: medicationsError }, { data: appointments, error: appointmentsError }, { data: documents, error: documentsError }, { data: notes, error: notesError }] = await Promise.all([
+  const [{ data: events, error: eventsError }, { data: symptoms, error: symptomsError }, { data: medications, error: medicationsError }, { data: appointments, error: appointmentsError }, { data: documents, error: documentsError }, { data: notes, error: notesError }, { data: aiReports, error: aiReportsError }] = await Promise.all([
     supabase.from("health_events").select("id,event_type,title,description,source,verification_status,occurred_at").eq("patient_id", patientId).eq("visibility", "general").order("occurred_at", { ascending: false }).limit(20),
     supabase.from("symptom_observations").select("id,symptom,severity,notes,observed_at").eq("patient_id", patientId).eq("visibility", "general").order("observed_at", { ascending: false }).limit(20),
     supabase.from("medication_records").select("id,medicine_name,generic_name,strength,route,instructions,status,created_at").eq("patient_id", patientId).eq("visibility", "general").order("created_at", { ascending: false }).limit(50),
     supabase.from("appointments").select("id,event_type,title,starts_at,location,status").eq("patient_id", patientId).eq("visibility", "general").order("starts_at", { ascending: false }).limit(20),
     supabase.from("medical_documents").select("id,display_name,document_type,document_date,storage_path,visibility,created_at").eq("patient_id", patientId).eq("visibility", "general").order("created_at", { ascending: false }).limit(30),
     supabase.from("clinical_notes").select("id,doctor_user_id,note_kind,title,body,follow_up_on,amends_note_id,created_at").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(100),
+    supabase.from("ai_reports").select("id,created_at,date_range_start,date_range_end,report_json").eq("patient_id", patientId).eq("report_type", "patient_history_summary").eq("visibility", "general").order("created_at", { ascending: false }).limit(20),
   ]);
+  const reportIds = (aiReports ?? []).map((report) => report.id);
+  const [{ data: aiSources, error: aiSourcesError }, { data: aiReviews, error: aiReviewsError }] = reportIds.length ? await Promise.all([
+    supabase.from("ai_analysis_sources").select("id,report_id,source_label,source_date").eq("patient_id", patientId).in("report_id", reportIds).order("source_date", { ascending: false }),
+    supabase.from("ai_report_reviews").select("id,report_id,doctor_user_id,review_outcome,review_note,created_at").eq("patient_id", patientId).in("report_id", reportIds).order("created_at", { ascending: false }),
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
   const documentRecords = await Promise.all((documents ?? []).map(async (document) => {
     const { data } = await supabase.storage.from("medical-documents").createSignedUrl(document.storage_path, 300, { download: document.display_name });
     return { ...document, downloadUrl: data?.signedUrl ?? null };
   }));
-  const hasLoadError = Boolean(eventsError || symptomsError || medicationsError || appointmentsError || documentsError || notesError);
+  const hasLoadError = Boolean(eventsError || symptomsError || medicationsError || appointmentsError || documentsError || notesError || aiReportsError || aiSourcesError || aiReviewsError);
 
   return <main className="account-page care-dashboard-page">
     <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account/doctor" className="account-back-link"><ArrowLeft size={15} /> Doctor dashboard</Link><form action={signOut}><button type="submit" className="account-signout">Sign out</button></form></div></header>
     <div className="care-dashboard-content">
       <div className="account-welcome"><span className="micro-label">CONSENTED PATIENT VIEW</span><h1>{patient.display_name}</h1><p>{stageLabels[patient.life_stage] ?? "Patient"}{patient.date_of_birth ? ` · Born ${patient.date_of_birth}` : ""} · review only records available to your account.</p></div>
-      <div className="account-safety-note"><ShieldCheck size={17} /><span>Patient-entered and imported information is labelled as reported or unverified. Clinical notes below are separately labelled and authored by a verified clinician. AI summaries are not shown as clinician records.</span></div>
+      <div className="account-safety-note"><ShieldCheck size={17} /><span>Patient-entered and imported information is labelled as reported or unverified. Clinical notes and AI-summary reviews are separately labelled and authored by a verified clinician. A review does not alter the AI-generated content.</span></div>
       <div className="report-toolbar-actions"><Link className="account-record-link" href={`/account/patients/${patientId}/reports`}><FileText size={15} /> Open health report</Link></div>
 
       {canAppendNotes && <ClinicalNoteForm patientId={patientId} notes={(notes ?? []).map(({ id, title, created_at }) => ({ id, title, created_at }))} />}
+
+      {hasLoadError ? null : <section className="account-card care-dashboard-card" aria-labelledby="doctor-ai-summaries-title"><div className="account-card-heading"><div><span className="micro-label">PATIENT-CONSENTED AI</span><h2 id="doctor-ai-summaries-title">AI health summaries</h2><p>Review the dated summary and source labels. AI output is not a clinical record or medical advice.</p></div><span className="account-card-icon"><ShieldCheck size={18} /></span></div>
+        {aiReports?.length ? <div className="timeline-event-list">{aiReports.map((report) => {
+          const parsed = patientSummarySchema.safeParse(report.report_json as Json);
+          const sources = (aiSources ?? []).filter((source) => source.report_id === report.id);
+          const reviews = (aiReviews ?? []).filter((review) => review.report_id === report.id);
+          return <article className="timeline-event" key={report.id}><div className="timeline-event-heading"><span className="timeline-event-type">{reviews[0] ? `AI summary · clinician review: ${reviews[0].review_outcome.replaceAll("_", " ")}` : "AI-generated summary · not clinician reviewed"}</span><span>{report.date_range_start ?? ""}{report.date_range_end ? ` to ${report.date_range_end}` : ""}</span></div><LocalDateTime value={report.created_at} />
+            {parsed.success ? <>
+              <p>{parsed.data.summary}</p>
+              {parsed.data.observations.length > 0 && <ul>{parsed.data.observations.map((item, index) => <li key={index}>{item.text}</li>)}</ul>}
+              {parsed.data.questionsForClinician.length > 0 && <><strong>Questions listed for the care conversation</strong><ul>{parsed.data.questionsForClinician.map((item, index) => <li key={index}>{item}</li>)}</ul></>}
+            </> : <p>This stored AI summary could not be displayed.</p>}
+            {sources.length > 0 && <details><summary>View {sources.length} source records</summary><ul>{sources.map((source) => <li key={source.id}>{source.source_label}{source.source_date ? ` · ${source.source_date.slice(0, 10)}` : ""}</li>)}</ul></details>}
+            {reviews.length > 0 && <div className="medication-record-subsection"><h3>Previous clinician reviews</h3>{reviews.map((review) => <div className="timeline-event" key={review.id}><strong>{review.review_outcome.replaceAll("_", " ")}</strong><p>{review.review_note}</p><LocalDateTime value={review.created_at} /></div>)}</div>}
+            {canAppendNotes && <AISummaryReviewForm patientId={patientId} reportId={report.id} />}
+          </article>;
+        })}</div> : <p className="care-log-empty">No patient-consented AI summaries have been saved.</p>}
+      </section>}
 
       {hasLoadError ? <div className="account-card"><div className="account-empty-state"><ShieldCheck size={22} /><strong>Some patient information could not be loaded</strong><span>Refresh the page or sign in again. Available database access checks still apply.</span></div></div> : <>
         <section className="account-card care-dashboard-card" aria-labelledby="doctor-timeline-title"><div className="account-card-heading"><div><span className="micro-label">PATIENT RECORD</span><h2 id="doctor-timeline-title">Recent timeline</h2><p>Reported events are not independently verified.</p></div><span className="account-card-icon"><HeartPulse size={18} /></span></div>

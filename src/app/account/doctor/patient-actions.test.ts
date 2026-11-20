@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createClinicalNote } from "./patient-actions";
+import { createAIReportReview, createClinicalNote } from "./patient-actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -67,5 +67,41 @@ describe("clinician note action", () => {
     const result = await createClinicalNote(initialState, form({ patientId, noteKind: "consultation", title: "Visit summary", body: "Clinician-entered content" }));
     expect(result.status).toBe("error");
     expect(result.message).toContain("consent is still active");
+  });
+});
+
+describe("AI summary review action", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("validates review fields before creating a client", async () => {
+    const result = await createAIReportReview(initialState, form({ patientId, reportId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", outcome: "reviewed", note: " " }));
+    expect(result.status).toBe("error");
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("requires a verified clinician before saving a review", async () => {
+    supabase.auth.getUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
+    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: { verification_status: "unverified" }, error: null }) };
+    supabase.from.mockReturnValue(query);
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+    const result = await createAIReportReview(initialState, form({ patientId, reportId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", outcome: "reviewed", note: "Reviewed the patient-entered details." }));
+    expect(result.status).toBe("error");
+    expect(supabase.from).toHaveBeenCalledWith("doctors");
+  });
+
+  it("appends a verified clinician review and refreshes patient views", async () => {
+    const reportId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const doctorQuery = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: { verification_status: "verified" }, error: null }) };
+    const insertQuery = { insert: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: { id: "review-1" }, error: null }) };
+    supabase.auth.getUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
+    supabase.from.mockImplementation((table: string) => table === "doctors" ? doctorQuery : insertQuery);
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+
+    const result = await createAIReportReview(initialState, form({ patientId, reportId, outcome: "needs_correction", note: "Please verify this reported date with the patient." }));
+
+    expect(insertQuery.insert).toHaveBeenCalledWith({ patient_id: patientId, report_id: reportId, doctor_user_id: userId, review_outcome: "needs_correction", review_note: "Please verify this reported date with the patient." });
+    expect(result.status).toBe("success");
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/doctor/patients/${patientId}`);
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
   });
 });

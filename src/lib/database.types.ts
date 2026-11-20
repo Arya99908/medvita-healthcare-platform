@@ -184,6 +184,58 @@ export type Database = {
           },
         ]
       }
+      ai_report_reviews: {
+        Row: {
+          created_at: string
+          doctor_user_id: string
+          id: string
+          patient_id: string
+          report_id: string
+          review_note: string
+          review_outcome: string
+        }
+        Insert: {
+          created_at?: string
+          doctor_user_id: string
+          id?: string
+          patient_id: string
+          report_id: string
+          review_note: string
+          review_outcome: string
+        }
+        Update: {
+          created_at?: string
+          doctor_user_id?: string
+          id?: string
+          patient_id?: string
+          report_id?: string
+          review_note?: string
+          review_outcome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_report_reviews_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_report_reviews_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "ai_reports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_report_reviews_patient_report_fk"
+            columns: ["patient_id", "report_id"]
+            isOneToOne: false
+            referencedRelation: "ai_reports"
+            referencedColumns: ["patient_id", "id"]
+          },
+        ]
+      }
       allergies: {
         Row: {
           created_at: string

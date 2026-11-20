@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(135);
+select extensions.plan(142);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -286,7 +286,20 @@ select extensions.is((select count(*) from public.patient_profiles where id='bbb
 select extensions.lives_ok($$insert into public.clinical_notes(id,patient_id,doctor_user_id,note_kind,title,body,follow_up_on) values('99999999-9999-4999-8999-999999999997','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','44444444-4444-4444-8444-444444444444','follow_up','Fictional clinician follow-up','Fictional clinician-authored note','2026-12-01')$$,'consented verified doctor can append a clinical note');
 select extensions.is((select count(*) from public.clinical_notes where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and id='99999999-9999-4999-8999-999999999997'),1::bigint,'clinician note is visible to its author');
 select extensions.throws_ok($$update public.clinical_notes set body='Changed content' where id='99999999-9999-4999-8999-999999999997'$$,'42501',null,'clinician notes cannot be edited after saving');
+reset role;
+insert into public.ai_reports(id,patient_id,report_type,report_json,generated_by,visibility,date_range_start,date_range_end)
+values('88888888-8888-4888-8888-888888888888','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','patient_history_summary','{"summary":"Fictional summary","observations":[],"questionsForClinician":[],"missingInformation":[]}'::jsonb,'22222222-2222-4222-8222-222222222222','general','2026-11-01','2026-11-20');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444',true);
+select extensions.is((select count(*) from public.ai_reports where id='88888888-8888-4888-8888-888888888888'),1::bigint,'consented verified doctor can read patient-consented AI summaries');
+select extensions.lives_ok($$insert into public.ai_report_reviews(patient_id,report_id,doctor_user_id,review_outcome,review_note) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','88888888-8888-4888-8888-888888888888','44444444-4444-4444-8444-444444444444','needs_correction','Fictional clinician review: verify the reported date with the patient.')$$,'verified doctor with patient clinical-note consent can append an AI summary review');
+select extensions.is((select count(*) from public.ai_report_reviews where report_id='88888888-8888-4888-8888-888888888888'),1::bigint,'clinician review is visible to its author');
+select extensions.throws_ok($$update public.ai_report_reviews set review_note='Changed review' where report_id='88888888-8888-4888-8888-888888888888'$$,'42501',null,'AI summary reviews cannot be edited after saving');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.is((select count(*) from public.ai_report_reviews where report_id='88888888-8888-4888-8888-888888888888' and review_outcome='needs_correction'),1::bigint,'patient can read the clinician review outcome');
 select extensions.is(jsonb_array_length(public.export_my_data() #> '{tables,clinical_notes}'),1,'clinical notes are included in the RLS-filtered account export');
+select extensions.is(jsonb_array_length(public.export_my_data() #> '{tables,ai_report_reviews}'),1,'AI summary reviews are included in the RLS-filtered account export');
+select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444',true);
 select extensions.throws_ok($$insert into public.health_events(patient_id,event_type,title,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','note','Doctor write denied','clinician','44444444-4444-4444-8444-444444444444')$$,'42501',null,'read-only doctor cannot write patient health events');
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
 select extensions.is((select count(*) from public.clinical_notes where id='99999999-9999-4999-8999-999999999997'),1::bigint,'linked reader can see a clinician-authored note');
@@ -296,6 +309,7 @@ select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222'
 select extensions.lives_ok($$update public.access_permissions set revoked_at=now() where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='clinical_notes'$$,'patient can revoke only the doctor clinical-note permission');
 select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444',true);
 select extensions.throws_ok($$insert into public.clinical_notes(patient_id,doctor_user_id,note_kind,title,body) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','44444444-4444-4444-8444-444444444444','consultation','Expired consent test','Should be rejected')$$,'42501',null,'doctor cannot append notes after note consent is revoked');
+select extensions.throws_ok($$insert into public.ai_report_reviews(patient_id,report_id,doctor_user_id,review_outcome,review_note) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','88888888-8888-4888-8888-888888888888','44444444-4444-4444-8444-444444444444','reviewed','Should be rejected')$$,'42501',null,'doctor cannot append AI summary review after note consent is revoked');
 select extensions.is(medvita_private.has_patient_access('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','clinical_notes'),false,'revoked note consent removes clinician-note permission');
 select extensions.lives_ok($$update public.patient_relationships set status='revoked',revoked_at=now() where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and relationship_role='doctor'$$,'doctor can remove their own relationship');
 select extensions.ok((select revoked_at is not null from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='read'),'revoking doctor relationship also revokes patient read consent');
