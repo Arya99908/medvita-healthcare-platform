@@ -91,6 +91,7 @@ export const navigationItems = [
   { id: "timeline", label: "Health timeline", icon: "timeline" },
   { id: "medications", label: "Medicines", icon: "medications" },
   { id: "appointments", label: "Appointments", icon: "calendar" },
+  { id: "careTeam", label: "Family & care team", icon: "team" },
   { id: "wellness", label: "Wellness", icon: "wellness" },
   { id: "documents", label: "Documents", icon: "documents" },
   { id: "emergency", label: "Emergency help", icon: "emergency" },

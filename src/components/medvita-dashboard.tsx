@@ -3,7 +3,7 @@
 import {
   Activity, ArrowRight, Baby, Bell, CalendarDays,
   Check, ChevronDown, ClipboardList, FileText, Heart, Home,
-  Menu, MessageCircle, Plus, Search, Shield, Sparkles, Users, X, Pill, PhoneCall,
+  Menu, MessageCircle, Plus, Search, Shield, Sparkles, Users, X, Pill, PhoneCall, Stethoscope,
   Leaf, Download, RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
@@ -46,6 +46,7 @@ const sectionTitles: Record<AppSection, { title: string; subtitle: string }> = {
   medications: { title: "Medicines", subtitle: "Keep medication schedules and reminders easy to follow." },
   appointments: { title: "Appointments", subtitle: "Plan ahead and keep your care team in the loop." },
   wellness: { title: "Everyday wellness", subtitle: "Small routines can make care feel easier to manage." },
+  careTeam: { title: "Family & care team", subtitle: "See how patients, families, caregivers, clinicians, and administrators work together." },
   documents: { title: "Health documents", subtitle: "Keep sample records and care documents together." },
   emergency: { title: "Emergency help", subtitle: "Open your device dialer and review fictional emergency details." },
 };
@@ -60,6 +61,7 @@ function IconFor({ name, size = 18 }: { name: string; size?: number }) {
     case "wellness": return <Leaf {...props} />;
     case "documents": return <FileText {...props} />;
     case "emergency": return <PhoneCall {...props} />;
+    case "team": return <Users {...props} />;
     default: return <Heart {...props} />;
   }
 }
@@ -183,6 +185,7 @@ export default function MedVitaDashboard() {
             {activeSection === "timeline" && <TimelineSection profile={profile} notes={profileNotes} searchTerm={searchTerm} setSearchTerm={setSearchTerm} />}
             {activeSection === "medications" && <MedicationSection profile={profile} taken={medicationTaken} setTaken={setMedicationTaken} />}
             {activeSection === "appointments" && <AppointmentSection profile={profile} appointments={appointments[profile.id] ?? []} onAdd={addSampleAppointment} />}
+            {activeSection === "careTeam" && <CareTeamSection key={profile.id} profile={profile} />}
             {activeSection === "wellness" && <WellnessSection profile={profile} done={wellnessDone} setDone={setWellnessDone} />}
             {activeSection === "documents" && <DocumentSection uploadedNames={uploadedNames} setUploadedNames={setUploadedNames} />}
             {activeSection === "emergency" && <EmergencySection profile={profile} />}
@@ -230,6 +233,47 @@ function MedicationSection({ profile, taken, setTaken }: { profile: DemoProfile;
 
 function AppointmentSection({ profile, appointments, onAdd }: { profile: DemoProfile; appointments: DemoEvent[]; onAdd: () => void }) {
   return <section className="section-card"><div className="card-heading"><div><span className="micro-label">SAMPLE CARE CALENDAR</span><h2>Appointments for {profile.name}</h2><p>Appointments shown here are fictional demo entries.</p></div><button className="primary-button small-button" type="button" onClick={onAdd}><Plus size={16} /> Add sample visit</button></div><div className="timeline-list full-timeline"><TimelineRow event={{ date: profile.nextDate, title: profile.nextEvent, detail: "Fictional upcoming appointment", type: "visit" }} />{appointments.map((event, index) => <TimelineRow key={index} event={event} />)}{profile.events.filter((event) => event.type === "visit").map((event, index) => <TimelineRow key={`old-${index}`} event={event} />)}</div><div className="info-callout"><Bell size={17} /><p>Calendar and notification connections are not configured in this demo.</p></div></section>;
+}
+
+type DemoRole = "patient" | "family" | "caregiver" | "doctor" | "admin";
+
+const roleCards: Record<DemoRole, { label: string; icon: typeof Users; access: string; details: string; actions: string[] }> = {
+  patient: { label: "Patient", icon: Heart, access: "Own profile", details: "Manage your health information, appointments, reminders, and sharing choices.", actions: ["View personal timeline", "Manage medicines and appointments", "Choose what to share"] },
+  family: { label: "Parent / family", icon: Users, access: "Linked profile access", details: "Support a child or family member with the access granted for that profile.", actions: ["Record daily care notes", "Coordinate visits and tasks", "Prepare a care handover"] },
+  caregiver: { label: "Caregiver / nurse", icon: ClipboardList, access: "Assigned care access", details: "Coordinate assigned care and share observations with the authorised care circle.", actions: ["Review assigned tasks", "Record care observations", "Share a handover"] },
+  doctor: { label: "Doctor", icon: Stethoscope, access: "Verified and patient-authorised", details: "Review permitted general records and add a separate clinician note when the patient grants that permission.", actions: ["Review an authorised summary", "Add a clinician note", "Keep patient entries unchanged"] },
+  admin: { label: "Platform admin", icon: Shield, access: "Restricted administration", details: "Review professional verification requests and platform controls without opening general patient records.", actions: ["Review professional credentials", "Record an audited decision", "No general patient-record access"] },
+};
+
+function CareTeamSection({ profile }: { profile: DemoProfile }) {
+  const [role, setRole] = useState<DemoRole>("patient");
+  const [taskDone, setTaskDone] = useState<Record<string, boolean>>({});
+  const [handover, setHandover] = useState("");
+  const [savedHandover, setSavedHandover] = useState("");
+  const familyLabel = profile.id === "infant" || profile.id === "child" ? "Riya, parent / guardian" : profile.id === "senior" ? "Meera, daughter / care partner" : profile.careContact;
+  const tasks = [
+    { id: "visit", title: "Prepare questions for the next visit", assigned: familyLabel, due: profile.nextDate },
+    { id: "checkin", title: "Share a brief care-circle check-in", assigned: "Care partner", due: "Sample · this week" },
+  ];
+  const selectedRole = roleCards[role];
+  const RoleIcon = selectedRole.icon;
+
+  function saveHandover(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = handover.trim();
+    if (!trimmed) return;
+    setSavedHandover(trimmed); setHandover("");
+  }
+
+  return <div className="care-team-showcase">
+    <section className="section-card"><div className="card-heading"><div><span className="micro-label">SYNTHETIC ROLE WALKTHROUGH</span><h2>One care circle, clear access</h2><p>Switch perspectives to show how each role supports {profile.name}&apos;s care.</p></div><span className="account-card-icon"><Users size={19} /></span></div>
+      <div className="care-role-tabs" role="group" aria-label="Choose a fictional account role">{(Object.keys(roleCards) as DemoRole[]).map((key) => { const Role = roleCards[key].icon; return <button type="button" aria-pressed={role === key} className={role === key ? "active" : ""} key={key} onClick={() => setRole(key)}><Role size={15} />{roleCards[key].label}</button>; })}</div>
+      <article className="care-role-detail" aria-live="polite"><div className="care-role-heading"><span className="care-role-icon"><RoleIcon size={19} /></span><div><span className="micro-label">{selectedRole.access}</span><h3>{selectedRole.label} view</h3></div></div><p>{selectedRole.details}</p><ul>{selectedRole.actions.map((action) => <li key={action}><Check size={14} />{action}</li>)}</ul></article>
+    </section>
+    <div className="care-team-grid"><section className="section-card"><div className="card-heading"><div><span className="micro-label">CARE COORDINATION</span><h2>Sample shared tasks</h2><p>Task status changes only in this browser demo.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></div><div className="demo-care-task-list">{tasks.map((task) => { const done = Boolean(taskDone[task.id]); return <article className="demo-care-task" key={task.id}><button type="button" aria-label={`Mark ${task.title} ${done ? "not done" : "done"}`} aria-pressed={done} className={`demo-task-toggle${done ? " done" : ""}`} onClick={() => setTaskDone((current) => ({ ...current, [task.id]: !current[task.id] }))}>{done ? <Check size={15} /> : <span />}</button><div><strong>{task.title}</strong><small>{task.assigned} · {task.due} · fictional</small></div></article>; })}</div><Link className="text-button" href="/account/care">Open secure care-task workspace <ArrowRight size={15} /></Link></section>
+      <section className="section-card"><div className="card-heading"><div><span className="micro-label">CARE HANDOVER</span><h2>Pass along a note</h2><p>Try a sample handover for {profile.name}.</p></div><span className="account-card-icon"><MessageCircle size={18} /></span></div>{savedHandover && <div className="demo-handover-saved" role="status"><Check size={15} /><span><strong>Saved in this browser demo</strong><br />{savedHandover}</span></div>}<form className="demo-handover-form" onSubmit={saveHandover}><label htmlFor="demo-handover-note">What should the next care partner know?</label><textarea id="demo-handover-note" rows={3} maxLength={500} value={handover} onChange={(event) => setHandover(event.target.value)} placeholder="Write a fictional update for the next shift" /><button className="primary-button small-button" type="submit" disabled={!handover.trim()}><Check size={15} /> Save sample handover</button></form><p className="demo-privacy-caption">Fictional only. Real handovers are available inside authorised patient accounts.</p></section></div>
+    <div className="info-callout"><Shield size={17} /><p>This walkthrough uses synthetic profiles and local demo state. Real profile access, clinician consent, invitations, and audit records use the secure account workflows.</p></div>
+  </div>;
 }
 
 function WellnessSection({ profile, done, setDone }: { profile: DemoProfile; done: Record<string, boolean>; setDone: (update: (state: Record<string, boolean>) => Record<string, boolean>) => void }) {

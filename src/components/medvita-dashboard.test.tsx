@@ -108,4 +108,26 @@ describe("MedVita fictional demo", () => {
     expect(screen.getByRole("link", { name: "Open device dialer for 108" }).getAttribute("href")).toBe("tel:108");
     expect(screen.getByText(/does not place the call or dispatch an ambulance/i)).toBeTruthy();
   });
+
+  it("walks through role-based care access and saves a local handover sample", async () => {
+    const user = userEvent.setup();
+    renderDashboard();
+
+    await user.click(screen.getByRole("button", { name: "Family & care team" }));
+    expect(screen.getByRole("heading", { name: "One care circle, clear access" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Doctor" }));
+    expect(screen.getByRole("heading", { name: "Doctor view" })).toBeTruthy();
+    expect(screen.getByText(/patient grants that permission/i)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Platform admin" }));
+    expect(screen.getByText(/No general patient-record access/i)).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Patient" }));
+    await user.type(screen.getByLabelText("What should the next care partner know?"), "Fictional handover note");
+    await user.click(screen.getByRole("button", { name: "Save sample handover" }));
+    expect(screen.getByText("Fictional handover note")).toBeTruthy();
+    expect(screen.getByText(/Saved in this browser demo/i)).toBeTruthy();
+    const task = screen.getByRole("button", { name: "Mark Prepare questions for the next visit done" });
+    await user.click(task);
+    expect(task.getAttribute("aria-pressed")).toBe("true");
+  });
 });
