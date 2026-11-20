@@ -19,6 +19,21 @@ export async function updateSession(request: NextRequest) {
       },
     },
   });
-  await supabase.auth.getClaims();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (claims?.sub && (request.nextUrl.pathname.startsWith("/account") || request.nextUrl.pathname.startsWith("/api/account"))) {
+    const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assuranceError || (assurance?.currentLevel !== "aal2" && assurance?.nextLevel === "aal2")) {
+      const loginUrl = request.nextUrl.clone();
+      const nextPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+      loginUrl.pathname = "/login";
+      loginUrl.search = "";
+      loginUrl.searchParams.set("mfa", "required");
+      loginUrl.searchParams.set("next", nextPath);
+      const redirect = NextResponse.redirect(loginUrl);
+      response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+      return redirect;
+    }
+  }
   return response;
 }

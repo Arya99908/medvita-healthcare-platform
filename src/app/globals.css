@@ -225,3 +225,17 @@ button:disabled { opacity:.55; cursor:not-allowed; }
 .voice-dictation{display:grid;gap:7px;margin:0;padding:8px 0 2px;border-top:1px solid #edf1ed}.voice-dictation>summary{width:fit-content;color:#4d7562;font-size:calc(var(--font-scale)*.63rem);font-weight:700;cursor:pointer}.voice-dictation>summary:focus-visible{outline:2px solid #6c9a7c;outline-offset:3px;border-radius:3px}.voice-dictation>label{color:#49675a;font-size:calc(var(--font-scale)*.62rem);font-weight:700}.voice-dictation>select{width:100%;min-height:40px;padding:0 10px;border:1px solid #dce8df;border-radius:8px;color:#355448;background:#fbfdfb;font:500 calc(var(--font-scale)*.66rem) Manrope,Arial,sans-serif}.voice-dictation-button{width:fit-content;min-height:38px}.voice-dictation-privacy,.voice-dictation-status{margin:0;color:#71867a;font-size:calc(var(--font-scale)*.59rem);line-height:1.5}.voice-dictation-status{color:#456b57}
 .display-read-aloud{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 10px;border:1px solid #d2e0d6;border-radius:8px;color:#294b40;background:#fff;font-size:calc(var(--font-scale)*.68rem);font-weight:700;text-align:left;cursor:pointer}.display-read-aloud:focus-visible{outline:3px solid #e2a257;outline-offset:2px}.display-speech-status{margin:0;color:#536f61;font-size:calc(var(--font-scale)*.61rem);line-height:1.45}.medvita-high-contrast .display-read-aloud,.medvita-high-contrast .display-speech-status{border-color:#343d37;color:#111;background:#fff}
 .senior-observations-history{margin-top:5px}.senior-observations-history>summary{color:#4d7562;font-size:calc(var(--font-scale)*.61rem);font-weight:700;cursor:pointer}.senior-observations-history>summary:focus-visible{outline:2px solid #6c9a7c;outline-offset:2px}
+.mfa-panel { display:grid; gap:14px; }
+.mfa-factor-list { list-style:none; padding:0; margin:0; display:grid; gap:9px; }
+.mfa-factor-list li, .mfa-factor-list li > span { display:flex; align-items:center; gap:10px; }
+.mfa-factor-list li { justify-content:space-between; padding:11px; border:1px solid #e5ece8; border-radius:10px; }
+.mfa-factor-list li > span > span { display:grid; gap:2px; }
+.mfa-factor-list small { color:#698078; }
+.mfa-enrollment { display:grid; gap:12px; padding:14px; border:1px solid #dce9e3; border-radius:12px; background:#f8fbf9; }
+.mfa-enrollment h3, .mfa-code-form h3 { margin:0; color:#21453f; }
+.mfa-enrollment ol { margin:0; padding-left:22px; display:grid; gap:5px; }
+.mfa-qr { width:200px; height:200px; max-width:100%; border:8px solid #fff; border-radius:8px; }
+.mfa-secret { display:block; width:fit-content; max-width:100%; overflow-wrap:anywhere; padding:9px 11px; background:#fff; border:1px solid #e2e9e5; border-radius:8px; color:#21453f; }
+.mfa-code-form { display:grid; gap:10px; }
+.mfa-code-form input { width:min(100%, 280px); padding:11px 12px; border:1px solid #cbd8d1; border-radius:9px; font-size:1rem; letter-spacing:.18em; }
+.mfa-code-form button { width:fit-content; }
