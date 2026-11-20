@@ -4,6 +4,7 @@ import { ArrowLeft, ClipboardCheck, LogOut, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "../actions";
 import DoctorReviewForm from "./review-form";
+import AccountDeletionReviewForm from "./account-deletion-review-form";
 
 export default async function AdminDashboardPage() {
   const supabase = await createClient();
@@ -34,6 +35,16 @@ export default async function AdminDashboardPage() {
     ? await supabase.from("doctors").select("id,display_name").in("id", reviewedDoctorIds)
     : { data: [] };
   const reviewedDoctorById = new Map((reviewedDoctors ?? []).map((doctor) => [doctor.id, doctor.display_name]));
+  const { data: deletionRequests, error: deletionRequestsError } = await supabase.from("account_deletion_requests")
+    .select("id,user_id,requested_at,reauthenticated_at,status,reviewed_at,review_note")
+    .order("requested_at", { ascending: false }).limit(100);
+  const deletionStatuses: Record<string, string> = {
+    requested: "Waiting for review",
+    withdrawn: "Withdrawn",
+    ready_for_manual_processing: "Ready for manual processing",
+    retention_review: "Retention review needed",
+    declined: "Declined",
+  };
 
   return <main className="account-page">
     <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Account</Link><form action={signOut}><button type="submit" className="account-signout"><LogOut size={15} /> Sign out</button></form></div></header>
@@ -54,6 +65,17 @@ export default async function AdminDashboardPage() {
               </article>;
             })}</div>
           </section> : <section className="account-card"><div className="account-empty-state"><ClipboardCheck size={23} /><strong>No applications are waiting</strong><span>New doctor submissions will appear here after they provide professional registration details.</span></div></section>}
+        <section className="account-card admin-review-queue admin-deletion-queue" aria-labelledby="deletion-queue-title">
+          <div className="account-card-heading"><div><span className="micro-label">ACCOUNT REQUESTS</span><h2 id="deletion-queue-title">Deletion review queue</h2><p>Requests are re-authenticated in the account flow. This queue does not delete accounts or health records.</p></div><span className="account-card-icon"><ShieldCheck size={18} /></span></div>
+          {deletionRequestsError ? <div className="account-empty-state"><strong>Deletion requests could not be loaded</strong><span>Check the deletion-request migration and administrator role.</span></div>
+            : deletionRequests?.length ? <div className="admin-review-list">{deletionRequests.map((request) => <article className="admin-deletion-card" key={request.id}>
+              <div className="admin-review-heading"><div><span className="micro-label">REQUEST {request.id.slice(0, 8)}</span><h3>{request.user_id ? `Account ${request.user_id}` : "Account identifier removed"}</h3></div><span className={`account-status ${request.status === "requested" ? "pending" : request.status === "declined" || request.status === "withdrawn" ? "inactive" : "active"}`}>{deletionStatuses[request.status] ?? request.status}</span></div>
+              <div className="admin-deletion-meta"><span>Requested {new Date(request.requested_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>{request.reviewed_at && <span>Reviewed {new Date(request.reviewed_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>}</div>
+              {request.review_note && <p>{request.review_note}</p>}
+              {request.status === "requested" && <AccountDeletionReviewForm requestId={request.id} />}
+            </article>)}</div> : <div className="account-empty-state"><strong>No account deletion requests</strong><span>Requests will appear here for review.</span></div>}
+          <p className="admin-scope-note">“Ready for manual processing” is not completion. An authorised operator must follow approved retention and deletion rules separately.</p>
+        </section>
         <section className="account-card admin-history-card" aria-labelledby="review-history-title">
           <div className="account-card-heading"><div><span className="micro-label">AUDIT HISTORY</span><h2 id="review-history-title">Doctor review decisions</h2><p>Recent verification decisions and administrator notes. Patient audit events are not included.</p></div><span className="account-card-icon"><ShieldCheck size={18} /></span></div>
           {historyError ? <div className="account-empty-state"><strong>Review history could not be loaded</strong><span>Try again after checking administrator access.</span></div>

@@ -39,6 +39,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_deletion_requests: {
+        Row: {
+          id: string
+          user_id: string | null
+          requested_at: string
+          reauthenticated_at: string
+          status: string
+          reviewed_by: string | null
+          reviewed_at: string | null
+          review_note: string | null
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          requested_at?: string
+          reauthenticated_at: string
+          status?: string
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          review_note?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string | null
+          requested_at?: string
+          reauthenticated_at?: string
+          status?: string
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          review_note?: string | null
+        }
+        Relationships: []
+      }
       access_permissions: {
         Row: {
           created_at: string
@@ -2412,6 +2445,10 @@ export type Database = {
       review_doctor_application: {
         Args: { p_decision: string; p_doctor_id: string; p_reason?: string | null }
         Returns: boolean
+      }
+      review_account_deletion_request: {
+        Args: { p_decision: string; p_note: string; p_request_id: string }
+        Returns: undefined
       }
       revoke_patient_invitation: {
         Args: { p_invitation_id: string }

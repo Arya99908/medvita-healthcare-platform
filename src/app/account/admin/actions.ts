@@ -9,6 +9,11 @@ const reviewSchema = z.object({
   decision: z.enum(["verified", "rejected"]),
   reason: z.string().trim().max(500).optional(),
 });
+const deletionReviewSchema = z.object({
+  requestId: z.string().uuid(),
+  decision: z.enum(["ready_for_manual_processing", "retention_review", "declined"]),
+  note: z.string().trim().min(5).max(500),
+});
 
 export type ReviewDoctorState = { status: "idle" | "success" | "error"; message: string };
 
@@ -36,4 +41,28 @@ export async function reviewDoctorApplication(_previous: ReviewDoctorState, form
   revalidatePath("/account/admin");
   revalidatePath("/account/doctor");
   return { status: "success", message: parsed.data.decision === "verified" ? "Doctor profile verified." : "Application rejected and reason recorded." };
+}
+
+export async function reviewAccountDeletionRequest(_previous: ReviewDoctorState, formData: FormData): Promise<ReviewDoctorState> {
+  const parsed = deletionReviewSchema.safeParse({
+    requestId: formData.get("requestId"),
+    decision: formData.get("decision"),
+    note: formData.get("note"),
+  });
+  if (!parsed.success) return { status: "error", message: "Choose a review outcome and add a note of at least 5 characters." };
+
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in with a platform administrator account to review requests." };
+
+  const { error } = await supabase.rpc("review_account_deletion_request", {
+    p_request_id: parsed.data.requestId,
+    p_decision: parsed.data.decision,
+    p_note: parsed.data.note,
+  });
+  if (error) return { status: "error", message: "This request could not be reviewed. It may have changed or administrator access may be missing." };
+
+  revalidatePath("/account/admin");
+  revalidatePath("/account");
+  return { status: "success", message: "Review outcome saved. The account and its health records have not been deleted." };
 }

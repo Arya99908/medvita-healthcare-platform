@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(190);
+select extensions.plan(204);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -65,6 +65,8 @@ values
   ('efefefef-efef-4fef-8fef-efefefefefef','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional verified condition','verified','22222222-2222-4222-8222-222222222222');
 insert into public.feeding_records(id,patient_id,feeding_type,created_by)
 values('abababab-abab-4bab-8bab-abababababac','cccccccc-cccc-4ccc-8ccc-ccccccccccc1','formula','22222222-2222-4222-8222-222222222222');
+insert into public.account_deletion_requests(id,user_id,reauthenticated_at)
+values('fefefefe-fefe-4fef-8fef-fefefefefefe','22222222-2222-4222-8222-222222222222',now());
 
 insert into public.medication_records(id,patient_id,medicine_name,status,created_by)
 values('dddddddd-dddd-4ddd-8ddd-dddddddddddd','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional patient B medicine','active','22222222-2222-4222-8222-222222222222');
@@ -88,6 +90,26 @@ select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111'
 select set_config('medvita.test_export',public.export_my_data()::text,true);
 select extensions.is((select count(*) from public.health_events where patient_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),2::bigint,'patient can read own general and sensitive events');
 select extensions.is((select count(*) from public.health_events where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'patient cannot read another patient events');
+select extensions.lives_ok($$insert into public.account_deletion_requests(id,user_id,reauthenticated_at) values('fdfdfdfd-fdfd-4fdf-8fdf-fdfdfdfdfdfd','11111111-1111-4111-8111-111111111111',now())$$,'user can create a deletion request for their own account');
+select extensions.throws_ok($$insert into public.account_deletion_requests(user_id,reauthenticated_at) values('22222222-2222-4222-8222-222222222222',now())$$,'42501',null,'user cannot request deletion for another account');
+select extensions.is((select count(*) from public.account_deletion_requests where user_id='11111111-1111-4111-8111-111111111111'),1::bigint,'user can read their own deletion request');
+select extensions.is((select count(*) from public.account_deletion_requests where user_id='22222222-2222-4222-8222-222222222222'),0::bigint,'user cannot read another account deletion request');
+select extensions.ok(jsonb_array_length(public.export_my_data() #> '{tables,account_deletion_requests}')=1,'account export includes only the caller-visible deletion request');
+select extensions.throws_ok($$update public.account_deletion_requests set status='ready_for_manual_processing' where id='fdfdfdfd-fdfd-4fdf-8fdf-fdfdfdfdfdfd'$$,'42501',null,'user cannot approve their own deletion request');
+select extensions.lives_ok($$update public.account_deletion_requests set status='withdrawn' where id='fdfdfdfd-fdfd-4fdf-8fdf-fdfdfdfdfdfd'$$,'user can withdraw their own pending deletion request');
+select extensions.is((select status from public.account_deletion_requests where id='fdfdfdfd-fdfd-4fdf-8fdf-fdfdfdfdfdfd'),'withdrawn','withdrawn request remains in its non-destructive state');
+select extensions.throws_ok($$select public.review_account_deletion_request('fefefefe-fefe-4fef-8fef-fefefefefefe','declined','No authorization')$$,'42501',null,'non-admin cannot review a deletion request');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','66666666-6666-4666-8666-666666666666',true);
+select extensions.is((select count(*) from public.account_deletion_requests),2::bigint,'platform admin can read the deletion request queue');
+select extensions.lives_ok($$select public.review_account_deletion_request('fefefefe-fefe-4fef-8fef-fefefefefefe','ready_for_manual_processing','Retention review completed')$$,'platform admin can record the manual-processing review outcome');
+select extensions.is((select status from public.account_deletion_requests where id='fefefefe-fefe-4fef-8fef-fefefefefefe'),'ready_for_manual_processing','admin review records the processing state without deleting the account');
+select extensions.is((select count(*) from public.audit_logs where resource_type='account_deletion_request' and resource_id='fefefefe-fefe-4fef-8fef-fefefefefefe' and action='account_deletion_request_reviewed' and actor_user_id='66666666-6666-4666-8666-666666666666'),1::bigint,'admin review is recorded in the restricted audit history');
+reset role;
+select extensions.is((select count(*) from auth.users where id='22222222-2222-4222-8222-222222222222'),1::bigint,'manual-processing approval does not delete the account automatically');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,patient_profiles}'),1,'export includes only the caller-visible patient profile');
 select extensions.is((current_setting('medvita.test_export')::jsonb #> '{tables,patient_profiles}') @> jsonb_build_array(jsonb_build_object('id','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')),false,'export omits another patient profile');
 select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,health_events}'),2,'export includes only RLS-visible health events');

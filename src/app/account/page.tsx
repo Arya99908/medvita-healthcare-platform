@@ -4,6 +4,7 @@ import { ArrowLeft, Baby, Bell, CalendarDays, Check, ClipboardList, Clock3, Down
 import { createClient } from "@/lib/supabase/server";
 import PatientProfileForm from "./profile-form";
 import { signOut } from "./actions";
+import AccountDeletionPanel from "./deletion-request-panel";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
 
@@ -12,10 +13,11 @@ export default async function AccountPage() {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) redirect("/login");
 
-  const [{ data: profiles, error: profilesError }, { data: relationships, error: relationshipsError }, { data: roles }] = await Promise.all([
+  const [{ data: profiles, error: profilesError }, { data: relationships, error: relationshipsError }, { data: roles }, { data: deletionRequests, error: deletionRequestsError }] = await Promise.all([
     supabase.from("patient_profiles").select("id,display_name,date_of_birth,life_stage,created_at").order("created_at", { ascending: false }),
     supabase.from("patient_relationships").select("patient_id,relationship_role,status,can_read,can_write").eq("user_id", user.id),
     supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "platform_admin"),
+    supabase.from("account_deletion_requests").select("id,requested_at,status,review_note").order("requested_at", { ascending: false }).limit(10),
   ]);
   const relationshipByPatient = new Map((relationships ?? []).map((relationship) => [relationship.patient_id, relationship]));
   const hasLoadError = Boolean(profilesError || relationshipsError);
@@ -37,6 +39,7 @@ export default async function AccountPage() {
         </section>
         <div className="account-safety-note"><ShieldCheck size={17} /><span>Fictional presentation profiles are separate from these account records. Use test data until the access rules and care workflows have been reviewed.</span></div>
         <section className="account-export" aria-labelledby="export-title"><div><strong id="export-title">Your data</strong><span>Download the account data stored in MedVita. Browser-only demo notes and document files are not included.</span></div><Link href="/api/account/export"><Download size={16} /> Download a copy</Link></section>
+        <AccountDeletionPanel requests={deletionRequests ?? []} loadError={Boolean(deletionRequestsError)} />
       </div>
       <aside className="account-side-column"><PatientProfileForm /><div className="account-side-help"><span className="micro-label">NEED THE DEMO?</span><p>Switch between all six fictional life stages without an account.</p><Link href="/">Open presentation demo <ArrowLeft size={14} /></Link></div></aside>
     </div>
