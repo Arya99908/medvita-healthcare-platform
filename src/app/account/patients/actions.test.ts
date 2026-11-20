@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, logMedicationAdministration, recordEmergencyAlert, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, logMedicationAdministration, recordEmergencyAlert, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -34,6 +34,19 @@ function updateQuery(result: unknown) {
 
 function deleteQuery(result: unknown) {
   const chain = { delete: vi.fn(() => chain), eq: vi.fn(() => chain), select: vi.fn(() => chain), maybeSingle: vi.fn().mockResolvedValue(result) };
+  return chain;
+}
+
+function listQuery(result: unknown) {
+  const chain = {
+    select: vi.fn(() => chain),
+    eq: vi.fn(() => chain),
+    gte: vi.fn(() => chain),
+    order: vi.fn(() => chain),
+    limit: vi.fn(() => chain),
+    maybeSingle: vi.fn().mockResolvedValue(result),
+    then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => Promise.resolve(result).then(resolve, reject),
+  };
   return chain;
 }
 
@@ -976,6 +989,87 @@ describe("emergency assistance actions", () => {
     expect(result.status).toBe("success");
     expect(removal.delete).toHaveBeenCalled();
     expect(removal.eq).toHaveBeenCalledWith("patient_id", patientId);
+  });
+});
+
+describe("caregiver handover action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("saves a point-in-time summary only from general records and to an active linked reader", async () => {
+    const conditions = listQuery({ data: [{ name: "Fictional condition", status: "active", reported_by: "patient", verification_status: "unverified" }], error: null });
+    const medicines = listQuery({ data: [{ medicine_name: "Fictional medicine", generic_name: null, strength: "10 mg", route: "oral", instructions: "As recorded", status: "active" }], error: null });
+    const symptoms = listQuery({ data: [{ symptom: "Fictional symptom", severity: 2, notes: "Synthetic observation", observed_at: "2026-11-20T03:00:00.000Z" }], error: null });
+    const appointments = listQuery({ data: [{ event_type: "laboratory_test", title: "Fictional blood test", starts_at: "2026-11-25T03:00:00.000Z", location: null, status: "scheduled" }], error: null });
+    const empty = () => listQuery({ data: [], error: null });
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === "patient_relationships") return query({ data: { status: "active", can_read: true, can_write: true }, error: null });
+      if (table === "patient_profiles") return query({ data: { display_name: "Fictional patient", date_of_birth: "2000-01-02", life_stage: "adult" }, error: null });
+      if (table === "medical_conditions") return conditions;
+      if (table === "medication_records") return medicines;
+      if (table === "symptom_observations") return symptoms;
+      if (table === "appointments") return appointments;
+      if (table === "caregiver_handover_records") return { insert };
+      return empty();
+    });
+    const form = new FormData(); form.set("toUserId", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"); form.set("note", "Call before the next visit.");
+    const result = await createCaregiverHandover(patientId, { status: "idle", message: "" }, form);
+    expect(result).toEqual({ status: "success", message: "Handover saved to this profile. No care access changed and no recipient was notified." });
+    const [[record]] = JSON.parse(JSON.stringify(insert.mock.calls)) as [[{ handover_text: string; from_user_id: string; to_user_id: string; visibility: string }]];
+    expect(record.from_user_id).toBe("user-1");
+    expect(record.to_user_id).toBe("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    expect(record.visibility).toBe("general");
+    expect(record.handover_text).toContain("Fictional condition");
+    expect(record.handover_text).toContain("Fictional medicine");
+    expect(record.handover_text).toContain("Fictional blood test");
+    expect(record.handover_text).toContain("NOT VERIFIED PRESCRIPTIONS");
+    expect(record.handover_text).toContain("Call before the next visit.");
+    expect(symptoms.eq).toHaveBeenCalledWith("visibility", "general");
+    expect(conditions.eq).toHaveBeenCalledWith("visibility", "general");
+    expect(medicines.eq).toHaveBeenCalledWith("visibility", "general");
+  });
+
+  it("does not save a handover if any source record could not be loaded", async () => {
+    const insert = vi.fn();
+    const empty = () => listQuery({ data: [], error: null });
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === "patient_relationships") return query({ data: { status: "active", can_read: true, can_write: true }, error: null });
+      if (table === "patient_profiles") return query({ data: { display_name: "Fictional patient", date_of_birth: null, life_stage: "adult" }, error: null });
+      if (table === "symptom_observations") return listQuery({ data: null, error: new Error("read failed") });
+      if (table === "caregiver_handover_records") return { insert };
+      return empty();
+    });
+    const result = await createCaregiverHandover(patientId, { status: "idle", message: "" }, new FormData());
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/no handover was saved/i);
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("blocks free-text handover notes for adolescent profiles", async () => {
+    const insert = vi.fn();
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === "patient_relationships") return query({ data: { status: "active", can_read: true, can_write: true }, error: null });
+      if (table === "patient_profiles") return query({ data: { display_name: "Fictional adolescent", date_of_birth: "2010-01-01", life_stage: "adolescent" }, error: null });
+      if (table === "caregiver_handover_records") return { insert };
+      return listQuery({ data: [], error: null });
+    });
+    const form = new FormData(); form.set("note", "Private sensitive information");
+    const result = await createCaregiverHandover(patientId, { status: "idle", message: "" }, form);
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/disabled for adolescent profiles/i);
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("requires active write access before reading or saving handover records", async () => {
+    mockSupabase.from.mockImplementation(() => query({ data: { status: "active", can_read: true, can_write: false }, error: null }));
+    const result = await createCaregiverHandover(patientId, { status: "idle", message: "" }, new FormData());
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/active write access/i);
+    expect(mockSupabase.from).toHaveBeenCalledTimes(1);
   });
 });
 

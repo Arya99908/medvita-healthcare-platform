@@ -227,6 +227,12 @@ const emergencyAlertSchema = z.object({
   alertType: z.enum(["ambulance_call_requested", "sos_call_requested", "caregiver_call_requested"]),
 });
 
+const caregiverHandoverSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  toUserId: z.string().trim().optional().default("").refine((value) => !value || z.string().uuid().safeParse(value).success, "Choose an active linked caregiver."),
+  note: z.string().trim().max(500, "Keep the handover note under 500 characters.").optional().default(""),
+});
+
 const menstrualSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   periodStart: z.string().trim().refine(isValidDateOnly, "Enter a valid start date."),
@@ -1063,4 +1069,67 @@ export async function recordEmergencyAlert(patientId: string, _previous: CareLog
   if (error) return { status: "error", message: "The emergency action could not be recorded. Use your device to contact local emergency services directly." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Action recorded. MedVita did not place a call, dispatch help, share location, or notify contacts. Use the manual call links below." };
+}
+
+export async function createCaregiverHandover(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = caregiverHandoverSchema.safeParse({ patientId, toUserId: formData.get("toUserId") ?? "", note: formData.get("note") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the handover details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before creating a handover." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You do not have active write access to this profile." };
+
+  if (parsed.data.toUserId) {
+    if (parsed.data.toUserId === user.id) return { status: "error", message: "Choose another linked reader or save the handover for the profile care team." };
+    const { data: recipient, error: recipientError } = await supabase.from("patient_relationships").select("status,can_read").eq("patient_id", patientId).eq("user_id", parsed.data.toUserId).maybeSingle();
+    if (recipientError || recipient?.status !== "active" || !recipient.can_read) return { status: "error", message: "Choose an active linked reader for this profile." };
+  }
+
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.valueOf() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const [{ data: profile, error: profileError }, { data: conditions, error: conditionsError }, { data: medicines, error: medicinesError }, { data: symptoms, error: symptomsError }, { data: appointments, error: appointmentsError }, { data: instructions, error: instructionsError }, { data: contacts, error: contactsError }, { data: tasks, error: tasksError }] = await Promise.all([
+    supabase.from("patient_profiles").select("display_name,date_of_birth,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("medical_conditions").select("name,status,reported_by,verification_status").eq("patient_id", patientId).eq("visibility", "general").order("created_at", { ascending: false }).limit(10),
+    supabase.from("medication_records").select("medicine_name,generic_name,strength,route,instructions,status").eq("patient_id", patientId).eq("visibility", "general").eq("status", "active").order("created_at", { ascending: false }).limit(10),
+    supabase.from("symptom_observations").select("symptom,severity,notes,observed_at").eq("patient_id", patientId).eq("visibility", "general").gte("observed_at", thirtyDaysAgo).order("observed_at", { ascending: false }).limit(10),
+    supabase.from("appointments").select("event_type,title,starts_at,location,status").eq("patient_id", patientId).eq("visibility", "general").eq("status", "scheduled").gte("starts_at", now.toISOString()).order("starts_at", { ascending: true }).limit(20),
+    supabase.from("health_events").select("title,description,occurred_at,verification_status").eq("patient_id", patientId).eq("visibility", "general").eq("source", "clinician").order("occurred_at", { ascending: false }).limit(5),
+    supabase.from("emergency_contacts").select("display_name,relationship,phone,priority").eq("patient_id", patientId).eq("visibility", "general").order("priority", { ascending: true }).limit(10),
+    supabase.from("caregiver_tasks").select("title,due_at,notes,status").eq("patient_id", patientId).eq("status", "open").order("due_at", { ascending: true, nullsFirst: false }).limit(10),
+  ]);
+  if (profileError || conditionsError || medicinesError || symptomsError || appointmentsError || instructionsError || contactsError || tasksError || !profile) return { status: "error", message: "Some profile records could not be loaded. No handover was saved; reload and try again." };
+  if (profile.life_stage === "adolescent" && parsed.data.note) return { status: "error", message: "Free-text handover notes are disabled for adolescent profiles to protect sensitive information." };
+
+  const clean = (value: string | null | undefined) => (value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 240);
+  const section = (title: string, values: string[]) => `${title}\n${values.length ? values.map((value) => `• ${value}`).join("\n") : "• None recorded in the available profile data."}`;
+  const birthDate = profile.date_of_birth ? new Date(`${profile.date_of_birth}T00:00:00.000Z`) : null;
+  let age: string = "Not recorded";
+  if (birthDate && !Number.isNaN(birthDate.valueOf()) && birthDate <= now) {
+    let years = now.getUTCFullYear() - birthDate.getUTCFullYear();
+    if (now.getUTCMonth() < birthDate.getUTCMonth() || (now.getUTCMonth() === birthDate.getUTCMonth() && now.getUTCDate() < birthDate.getUTCDate())) years--;
+    age = `${years} years`;
+  }
+  const pendingInvestigations = (appointments ?? []).filter((item) => item.event_type === "laboratory_test" || item.event_type === "imaging");
+  const handoverText = [
+    `MEDVITA CARE HANDOVER — ${clean(profile.display_name)}`,
+    `Generated: ${now.toISOString()}`,
+    `Age: ${age}`,
+    "Snapshot of records visible to the requesting account. User-entered records may be incomplete or unverified.",
+    section("CONDITION NOTES", (conditions ?? []).map((item) => `${clean(item.name)} — ${clean(item.status)}; ${clean(item.reported_by)} report; ${clean(item.verification_status)}`)),
+    section("CURRENT MEDICINE NOTES — NOT VERIFIED PRESCRIPTIONS", (medicines ?? []).map((item) => `${clean(item.medicine_name)}${item.generic_name ? ` (${clean(item.generic_name)})` : ""}${item.strength ? `, ${clean(item.strength)}` : ""}${item.route ? `, ${clean(item.route)}` : ""}${item.instructions ? ` — recorded directions: ${clean(item.instructions)}` : ""}`)),
+    section("RECENT GENERAL SYMPTOM REPORTS — LAST 30 DAYS", (symptoms ?? []).map((item) => `${clean(item.observed_at)} — ${clean(item.symptom)}; severity ${item.severity ?? "not recorded"}/5${item.notes ? `; ${clean(item.notes)}` : ""}`)),
+    section("UPCOMING APPOINTMENTS", (appointments ?? []).map((item) => `${clean(item.starts_at)} — ${clean(item.title)} (${clean(item.event_type)})${item.location ? `, ${clean(item.location)}` : ""}`)),
+    section("SCHEDULED LABORATORY OR IMAGING APPOINTMENTS (PENDING INVESTIGATION FOLLOW-UP)", pendingInvestigations.map((item) => `${clean(item.starts_at)} — ${clean(item.title)} (${clean(item.event_type)})`)),
+    section("CLINICIAN-SOURCED PROFILE NOTES — VERIFY STATUS", (instructions ?? []).map((item) => `${clean(item.occurred_at)} — ${clean(item.title)}${item.description ? `: ${clean(item.description)}` : ""}; ${clean(item.verification_status)}`)),
+    section("EMERGENCY CONTACTS", (contacts ?? []).map((item) => `${clean(item.priority === 1 ? "Primary" : item.priority === 2 ? "Secondary" : "Additional")} — ${clean(item.display_name)}${item.relationship ? ` (${clean(item.relationship)})` : ""}: ${clean(item.phone)}`)),
+    section("OPEN CARE TASKS", (tasks ?? []).map((item) => `${clean(item.title)}${item.due_at ? ` — due ${clean(item.due_at)}` : ""}${item.notes ? `; ${clean(item.notes)}` : ""}`)),
+    parsed.data.note ? `HANDOVER NOTE\n${clean(parsed.data.note)}` : "",
+    "This saved handover is a point-in-time summary, not a live record or a clinical recommendation. It does not change access permissions or notify the recipient.",
+  ].filter(Boolean).join("\n\n").slice(0, 12_000);
+
+  const { error } = await supabase.from("caregiver_handover_records").insert({ patient_id: patientId, from_user_id: user.id, to_user_id: parsed.data.toUserId || null, handover_text: handoverText, visibility: "general" });
+  if (error) return { status: "error", message: "The handover could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Handover saved to this profile. No care access changed and no recipient was notified." };
 }

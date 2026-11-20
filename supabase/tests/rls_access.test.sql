@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(87);
+select extensions.plan(90);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -148,6 +148,9 @@ select extensions.lives_ok($$insert into public.medication_administration_logs(p
 select extensions.throws_ok($$insert into public.medication_administration_logs(patient_id,medication_id,status,recorded_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','dddddddd-dddd-4ddd-8ddd-dddddddddddd','taken','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot record a dose event for another profile');
 select extensions.lives_ok($$insert into public.emergency_contacts(patient_id,display_name,phone,priority,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional emergency contact','+91 98765 43210',1,'22222222-2222-4222-8222-222222222222')$$,'patient with active write access can save an emergency contact');
 select extensions.lives_ok($$insert into public.emergency_alerts(patient_id,alert_type,status,message,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','ambulance_call_requested','created','Fictional manual action record; no call was sent','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can record an emergency action');
+select extensions.lives_ok($$insert into public.caregiver_handover_records(patient_id,from_user_id,to_user_id,handover_text,visibility) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333','Fictional handover summary','general')$$,'writer can hand over to an active linked reader');
+select extensions.throws_ok($$insert into public.caregiver_handover_records(patient_id,from_user_id,to_user_id,handover_text,visibility) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','33333333-3333-4333-8333-333333333333','Fictional forged handover','general')$$,'42501',null,'writer cannot forge the handover author');
+select extensions.throws_ok($$insert into public.caregiver_handover_records(patient_id,from_user_id,to_user_id,handover_text,visibility) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','55555555-5555-4555-8555-555555555555','Fictional unlinked handover','general')$$,'42501',null,'writer cannot target an unlinked handover recipient');
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select extensions.throws_ok($$insert into public.emergency_contacts(patient_id,display_name,phone,priority,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional unauthorized contact','+91 98765 43210',1,'11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add an emergency contact to another profile');
 select extensions.throws_ok($$insert into public.emergency_alerts(patient_id,alert_type,status,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','sos_call_requested','created','11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot record an emergency action for another profile');
