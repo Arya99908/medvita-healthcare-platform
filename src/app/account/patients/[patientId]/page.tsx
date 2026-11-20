@@ -24,6 +24,7 @@ import MenstrualJournalForm from "../menstrual-journal-form";
 import LocalDateTime from "@/components/local-date-time";
 import PatientAISummary from "../patient-ai-summary";
 import WellnessCenter from "../wellness-center";
+import HealthEventControls from "../health-event-controls";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
 
@@ -45,7 +46,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   const canWrite = canRead && relationship.can_write;
   const canGenerateAISummary = Boolean(canWrite && relationship?.relationship_role === "patient");
   const { data: events, error: eventsError } = canRead
-    ? await supabase.from("health_events").select("id,event_type,title,description,occurred_at,verification_status,visibility").eq("patient_id", patientId).order("occurred_at", { ascending: false })
+    ? await supabase.from("health_events").select("id,event_type,title,description,occurred_at,verification_status,visibility,created_by").eq("patient_id", patientId).order("occurred_at", { ascending: false })
     : { data: [], error: null };
   const { data: symptoms, error: symptomsError } = canRead
     ? await supabase.from("symptom_observations").select("id,symptom,severity,notes,observed_at,visibility").eq("patient_id", patientId).order("observed_at", { ascending: false })
@@ -230,7 +231,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       </section>}
       {canRead && <section className="account-card" aria-labelledby="timeline-title"><div className="account-card-heading"><div><span className="micro-label">RECORDS VISIBLE TO YOU</span><h2 id="timeline-title">Timeline entries</h2><p>Unverified entries stay clearly labeled.</p></div><span className="account-card-icon"><Clock3 size={18} /></span></div>
         {eventsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Timeline could not be loaded</strong><span>Reload the page or sign in again.</span></div>
-          : events?.length ? <div className="timeline-event-list">{events.map((event) => <article key={event.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{event.event_type.replaceAll("_", " ")}</span><LocalDateTime value={event.occurred_at} /></div><h3>{event.title}</h3>{event.description && <p>{event.description}</p>}<span className={`timeline-verification ${event.verification_status}`}>{event.verification_status === "verified" ? "Verified" : event.verification_status === "rejected" ? "Rejected" : "Unverified entry"}</span></article>)}</div>
+          : events?.length ? <div className="timeline-event-list">{events.map((event) => <article key={event.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{event.event_type.replaceAll("_", " ")}</span><LocalDateTime value={event.occurred_at} /></div><h3>{event.title}</h3>{event.description && <p>{event.description}</p>}<span className={`timeline-verification ${event.verification_status}`}>{event.verification_status === "verified" ? "Verified" : event.verification_status === "rejected" ? "Rejected" : "Unverified entry"}</span>{canWrite && event.created_by === user.id && event.verification_status === "unverified" && <HealthEventControls patientId={patientId} eventId={event.id} eventType={event.event_type} title={event.title} description={event.description} />}</article>)}</div>
             : <div className="account-empty-state"><Clock3 size={22} /><strong>No timeline entries</strong><span>When you add a note, it will appear here for people allowed to view it.</span></div>}
       </section>}
       {canRead && <section className="account-card" aria-labelledby="activity-title"><div className="account-card-heading"><div><span className="micro-label">CARE TEAM ACTIVITY</span><h2 id="activity-title">Recent activity</h2><p>Shows who changed a record and when. It does not copy notes or health details into this list.</p></div><span className="account-card-icon"><Activity size={18} /></span></div>

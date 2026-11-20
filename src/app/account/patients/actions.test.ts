@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, logMedicationAdministration, recordEmergencyAlert, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, logMedicationAdministration, recordEmergencyAlert, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -248,6 +248,55 @@ describe("health event server action", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/adolescent profile/i);
     expect(mockSupabase.from).not.toHaveBeenCalledWith("health_events");
+  });
+});
+
+describe("timeline note edit and removal actions", () => {
+  const eventId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const initialState = { status: "idle" as const, message: "" };
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  function editForm(values: Record<string, string> = {}) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries({ patientId, eventId, eventType: "care_note", title: "Corrected fictional note", description: "Corrected fictional details", ...values })) form.set(key, value);
+    return form;
+  }
+
+  it("updates only the authenticated author's unverified note fields", async () => {
+    const relationship = query({ data: { status: "active", can_read: true, can_write: true }, error: null });
+    const update = updateQuery({ data: { id: eventId }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationship : update);
+    const result = await updateHealthEvent(initialState, editForm());
+    expect(result.status).toBe("success");
+    expect(update.update).toHaveBeenCalledWith({ event_type: "care_note", title: "Corrected fictional note", description: "Corrected fictional details" });
+    expect(update.eq).toHaveBeenCalledWith("created_by", "user-1");
+    expect(update.eq).toHaveBeenCalledWith("verification_status", "unverified");
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}/reports`);
+  });
+
+  it("blocks editing for a read-only profile relationship", async () => {
+    mockSupabase.from.mockReturnValue(query({ data: { status: "active", can_read: true, can_write: false }, error: null }) as never);
+    const result = await updateHealthEvent(initialState, editForm());
+    expect(result.status).toBe("error");
+    expect(mockSupabase.from).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes only the authenticated author's unverified note", async () => {
+    const relationship = query({ data: { status: "active", can_read: true, can_write: true }, error: null });
+    const remove = deleteQuery({ data: { id: eventId }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationship : remove);
+    const form = new FormData();
+    form.set("patientId", patientId);
+    form.set("eventId", eventId);
+    const result = await deleteHealthEvent(initialState, form);
+    expect(result.status).toBe("success");
+    expect(remove.eq).toHaveBeenCalledWith("created_by", "user-1");
+    expect(remove.eq).toHaveBeenCalledWith("verification_status", "unverified");
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
   });
 });
 

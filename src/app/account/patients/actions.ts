@@ -57,6 +57,16 @@ const eventSchema = z.object({
   visibility: z.enum(["general", "sensitive_adolescent"]),
 });
 
+const updateEventSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  eventId: z.string().uuid("Choose a valid timeline entry."),
+  eventType: z.enum(["care_note", "symptom", "visit", "test_result", "other"]),
+  title: z.string().trim().min(2, "Enter a short title.").max(120, "Keep the title under 120 characters."),
+  description: z.string().trim().max(2000, "Keep the note under 2,000 characters.").optional().default(""),
+});
+
+const deleteEventSchema = z.object({ patientId: z.string().uuid(), eventId: z.string().uuid() });
+
 const appointmentSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   eventType: z.enum(["doctor_appointment", "hospital_visit", "hospital_admission", "discharge_date", "laboratory_test", "imaging", "vaccination", "follow_up", "medication_refill", "exercise", "meal", "wellness_goal", "caregiver_visit", "home_nursing", "procedure", "therapy", "general"]).default("doctor_appointment"),
@@ -356,6 +366,37 @@ export async function createHealthEvent(patientId: string, _previous: HealthEven
   if (error) return { status: "error", message: "The note could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Note saved as an unverified entry." };
+}
+
+export async function updateHealthEvent(_previous: HealthEventFormState, formData: FormData): Promise<HealthEventFormState> {
+  const parsed = updateEventSchema.safeParse({ patientId: formData.get("patientId"), eventId: formData.get("eventId"), eventType: formData.get("eventType"), title: formData.get("title"), description: formData.get("description") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the note details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before updating a note." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", parsed.data.patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You need active write access to update a timeline note." };
+  const { data, error } = await supabase.from("health_events").update({ event_type: parsed.data.eventType, title: parsed.data.title, description: parsed.data.description || null })
+    .eq("id", parsed.data.eventId).eq("patient_id", parsed.data.patientId).eq("created_by", user.id).eq("verification_status", "unverified").select("id").maybeSingle();
+  if (error || !data) return { status: "error", message: "Only your own unverified note can be updated. Check profile access and try again." };
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  revalidatePath(`/account/patients/${parsed.data.patientId}/reports`);
+  return { status: "success", message: "Your note was updated. It remains unverified." };
+}
+
+export async function deleteHealthEvent(_previous: HealthEventFormState, formData: FormData): Promise<HealthEventFormState> {
+  const parsed = deleteEventSchema.safeParse({ patientId: formData.get("patientId"), eventId: formData.get("eventId") });
+  if (!parsed.success) return { status: "error", message: "Choose a valid timeline note." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before removing a note." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", parsed.data.patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You need active write access to remove a timeline note." };
+  const { data, error } = await supabase.from("health_events").delete().eq("id", parsed.data.eventId).eq("patient_id", parsed.data.patientId).eq("created_by", user.id).eq("verification_status", "unverified").select("id").maybeSingle();
+  if (error || !data) return { status: "error", message: "Only your own unverified note can be removed. Check profile access and try again." };
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  revalidatePath(`/account/patients/${parsed.data.patientId}/reports`);
+  return { status: "success", message: "Your note was removed. The profile activity history keeps a record of the removal." };
 }
 
 export async function createSymptomObservation(patientId: string, _previous: HealthEventFormState, formData: FormData): Promise<HealthEventFormState> {

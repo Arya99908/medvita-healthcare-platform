@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(152);
+select extensions.plan(157);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -47,6 +47,8 @@ values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','note','Fictional general event','patient','general','11111111-1111-4111-8111-111111111111'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','note','Fictional sensitive event','patient','sensitive_adolescent','11111111-1111-4111-8111-111111111111'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','note','Other fictional patient event','patient','general','22222222-2222-4222-8222-222222222222');
+insert into public.health_events(id,patient_id,event_type,title,description,source,verification_status,visibility,created_by)
+values('cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','note','Fictional author-owned note','Fictional text','patient','unverified','general','22222222-2222-4222-8222-222222222222');
 
 insert into public.menstrual_records(patient_id,period_start,period_end,flow_note,visibility,created_by)
 values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-11-03','2026-11-07','Fictional private cycle note','sensitive_adolescent','11111111-1111-4111-8111-111111111111');
@@ -240,9 +242,18 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
 with changed as (update public.medication_records set medicine_name='Fictional edited by another caregiver' where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' returning id)
 select extensions.is((select count(*) from changed),0::bigint,'linked caregiver cannot edit another users medicine note');
+with changed as (update public.health_events set title='Unauthorized fictional change' where id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd' returning id)
+select extensions.is((select count(*) from changed),0::bigint,'linked writer cannot edit another users unverified timeline note');
+with removed as (delete from public.health_events where id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd' returning id)
+select extensions.is((select count(*) from removed),0::bigint,'linked writer cannot remove another users unverified timeline note');
 reset role;
 select extensions.is((select medicine_name from public.medication_records where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd'),'Fictional patient B medicine','linked caregiver update leaves the medicine note unchanged');
 set local role authenticated;
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.lives_ok($$update public.health_events set title='Fictional corrected own note' where id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd'$$,'author can edit their own unverified timeline note');
+select extensions.lives_ok($$delete from public.health_events where id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd'$$,'author can remove their own unverified timeline note');
+select extensions.is((select count(*) from public.patient_activity_events where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and resource_type='health_events' and resource_id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd' and action='record_removed' and actor_user_id='22222222-2222-4222-8222-222222222222'),1::bigint,'timeline removal remains in the privacy-filtered activity history');
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 
 select set_config('request.jwt.claim.sub','55555555-5555-4555-8555-555555555555',true);
