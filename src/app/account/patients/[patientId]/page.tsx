@@ -67,7 +67,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     ? await supabase.from("menstrual_records").select("id,period_start,period_end,flow_note,symptom_note,created_at").eq("patient_id", patientId).order("period_start", { ascending: false }).limit(50)
     : { data: [], error: null };
   const { data: appointments, error: appointmentsError } = canRead
-    ? await supabase.from("appointments").select("id,title,starts_at,ends_at,location,status").eq("patient_id", patientId).order("starts_at", { ascending: true })
+    ? await supabase.from("appointments").select("id,event_type,title,starts_at,ends_at,location,notes,status").eq("patient_id", patientId).order("starts_at", { ascending: true })
     : { data: [], error: null };
   const { data: medications, error: medicationsError } = canRead
     ? await supabase.from("medication_records").select("id,medicine_name,generic_name,strength,route,instructions,status,visibility,created_at").eq("patient_id", patientId).order("created_at", { ascending: false })
@@ -87,7 +87,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   }));
 
   return <main className="account-page">
-    <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Your profiles</Link><Link href="/" className="account-back-link">Presentation demo</Link></div></header>
+    <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Your profiles</Link><Link href="/account/calendar" className="account-back-link"><CalendarDays size={15} /> Calendar</Link><Link href="/" className="account-back-link">Presentation demo</Link></div></header>
     <div className="patient-timeline-layout">
       <div className="account-welcome"><span className="micro-label">{stageLabels[profile.life_stage] ?? "PATIENT"} TIMELINE</span><h1>{profile.display_name}</h1><p>Personal entries for this profile, subject to its current access permissions.</p></div>
       <div className="account-safety-note"><ShieldCheck size={17} /><span>Use fictional data only. Entries are unverified personal notes, not diagnoses, prescriptions, or medical advice.</span></div>
@@ -157,7 +157,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       </section>}
       {canRead && <section className="account-card" aria-labelledby="appointments-title"><div className="account-card-heading"><div><span className="micro-label">CARE CALENDAR</span><h2 id="appointments-title">Appointments</h2><p>Saved plans are not sent to clinics or external calendars. Marking one canceled only changes this list.</p></div><span className="account-card-icon"><CalendarDays size={18} /></span></div>
         {appointmentsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Appointments could not be loaded</strong><span>Reload the page or sign in again.</span></div>
-          : appointments?.length ? <div className="timeline-event-list">{appointments.map((appointment) => <article key={appointment.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{appointment.status.replaceAll("_", " ")}</span><LocalDateTime value={appointment.starts_at} /></div><h3>{appointment.title}</h3>{appointment.ends_at && <p>Ends <LocalDateTime value={appointment.ends_at} /></p>}{appointment.location && <p>{appointment.location}</p>}{canWrite && <AppointmentStatusForm patientId={patientId} appointmentId={appointment.id} status={appointment.status} />}</article>)}</div>
+          : appointments?.length ? <div className="timeline-event-list">{appointments.map((appointment) => <article key={appointment.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{appointment.event_type.replaceAll("_", " ")} · {appointment.status.replaceAll("_", " ")}</span><LocalDateTime value={appointment.starts_at} /></div><h3>{appointment.title}</h3>{appointment.ends_at && <p>Ends <LocalDateTime value={appointment.ends_at} /></p>}{appointment.location && <p>{appointment.location}</p>}{appointment.notes && <p>{appointment.notes}</p>}{canWrite && <AppointmentStatusForm patientId={patientId} appointmentId={appointment.id} status={appointment.status} />}</article>)}</div>
             : <div className="account-empty-state"><CalendarDays size={22} /><strong>No appointments saved</strong><span>Appointments you enter here remain private to this profile’s access group.</span></div>}
       </section>}
       {canRead && <section className="account-card" aria-labelledby="timeline-title"><div className="account-card-heading"><div><span className="micro-label">RECORDS VISIBLE TO YOU</span><h2 id="timeline-title">Timeline entries</h2><p>Unverified entries stay clearly labeled.</p></div><span className="account-card-icon"><Clock3 size={18} /></span></div>

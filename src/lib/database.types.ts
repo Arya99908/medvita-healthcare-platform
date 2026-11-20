@@ -237,8 +237,10 @@ export type Database = {
           created_by: string | null
           doctor_id: string | null
           ends_at: string | null
+          event_type: string
           id: string
           location: string | null
+          notes: string | null
           patient_id: string
           source: string
           starts_at: string
@@ -252,8 +254,10 @@ export type Database = {
           created_by?: string | null
           doctor_id?: string | null
           ends_at?: string | null
+          event_type?: string
           id?: string
           location?: string | null
+          notes?: string | null
           patient_id: string
           source?: string
           starts_at: string
@@ -267,8 +271,10 @@ export type Database = {
           created_by?: string | null
           doctor_id?: string | null
           ends_at?: string | null
+          event_type?: string
           id?: string
           location?: string | null
+          notes?: string | null
           patient_id?: string
           source?: string
           starts_at?: string

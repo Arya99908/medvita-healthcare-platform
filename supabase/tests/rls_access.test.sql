@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(79);
+select extensions.plan(81);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -108,6 +108,8 @@ select extensions.throws_ok($$insert into public.growth_records(patient_id,weigh
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.lives_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','blood_pressure_systolic',122,'mmHg','patient','22222222-2222-4222-8222-222222222222')$$,'adult with active write access can add own-profile vital reading');
 select extensions.throws_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','blood_pressure_systolic',122,'mmHg','patient','22222222-2222-4222-8222-222222222222')$$,'42501',null,'adult cannot add a vital reading to another patient profile');
+select extensions.lives_ok($$insert into public.appointments(id,patient_id,event_type,title,starts_at,notes,created_by) values('77777777-7777-4777-8777-777777777777','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','laboratory_test','Fictional calendar test','2026-11-21 03:30:00+00','Fictional note','22222222-2222-4222-8222-222222222222')$$,'adult with active write access can create a typed calendar event');
+select extensions.throws_ok($$insert into public.appointments(patient_id,event_type,title,starts_at,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','unsupported_event','Fictional invalid event','2026-11-21 03:30:00+00','22222222-2222-4222-8222-222222222222')$$,'23514',null,'calendar event type must be one of the supported values');
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
 select extensions.lives_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','temperature',38.2,'°C','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can record a child temperature');
 select extensions.throws_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','blood_pressure_systolic',110,'mmHg','caregiver','33333333-3333-4333-8333-333333333333')$$,'42501',null,'child vitals are limited to temperature readings');

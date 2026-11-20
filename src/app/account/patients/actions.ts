@@ -59,12 +59,14 @@ const eventSchema = z.object({
 
 const appointmentSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
+  eventType: z.enum(["doctor_appointment", "hospital_visit", "hospital_admission", "discharge_date", "laboratory_test", "imaging", "vaccination", "follow_up", "medication_refill", "exercise", "meal", "wellness_goal", "caregiver_visit", "home_nursing", "procedure", "therapy", "general"]).default("doctor_appointment"),
   title: z.string().trim().min(2, "Enter an appointment title.").max(120, "Keep the title under 120 characters."),
   startsAt: z.string().trim().min(1, "Choose a date and time.").refine(isValidLocalDateTime, "Enter a valid date and time."),
   startsAtOffset: z.coerce.number().int().min(-840).max(840),
   endsAt: z.string().trim().optional().default("").refine((value) => !value || isValidLocalDateTime(value), "Enter a valid end time."),
   endsAtOffset: z.coerce.number().int().min(-840).max(840),
   location: z.string().trim().max(200, "Keep the location under 200 characters.").optional().default(""),
+  notes: z.string().trim().max(1000, "Keep calendar notes under 1,000 characters.").optional().default(""),
 }).superRefine((value, context) => {
   if (value.endsAt && localDateTimeToUtc(value.endsAt, value.endsAtOffset) <= localDateTimeToUtc(value.startsAt, value.startsAtOffset)) {
     context.addIssue({ code: "custom", path: ["endsAt"], message: "End time must be after the start time." });
@@ -651,12 +653,14 @@ export async function createDevelopmentalMilestone(patientId: string, _previous:
 export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {
   const parsed = appointmentSchema.safeParse({
     patientId,
+    eventType: formData.get("eventType") ?? "doctor_appointment",
     title: formData.get("title"),
     startsAt: formData.get("startsAt"),
     startsAtOffset: formData.get("startsAtOffset") ?? "0",
     endsAt: formData.get("endsAt") ?? "",
     endsAtOffset: formData.get("endsAtOffset") ?? "0",
     location: formData.get("location") ?? "",
+    notes: formData.get("notes") ?? "",
   });
   if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the appointment details and try again." };
 
@@ -675,10 +679,12 @@ export async function createAppointment(patientId: string, _previous: Appointmen
 
   const { error } = await supabase.from("appointments").insert({
     patient_id: parsed.data.patientId,
+    event_type: parsed.data.eventType,
     title: parsed.data.title,
     starts_at: new Date(localDateTimeToUtc(parsed.data.startsAt, parsed.data.startsAtOffset)).toISOString(),
     ends_at: parsed.data.endsAt ? new Date(localDateTimeToUtc(parsed.data.endsAt, parsed.data.endsAtOffset)).toISOString() : null,
     location: parsed.data.location || null,
+    notes: parsed.data.notes || null,
     status: "scheduled",
     source: relationship.relationship_role === "patient" ? "patient" : relationship.relationship_role === "doctor" ? "clinician" : "caregiver",
     created_by: user.id,
@@ -688,6 +694,11 @@ export async function createAppointment(patientId: string, _previous: Appointmen
   if (error) return { status: "error", message: "The appointment could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Appointment saved." };
+}
+
+export async function createCalendarAppointment(_previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {
+  const patientId = String(formData.get("patientId") ?? "");
+  return createAppointment(patientId, _previous, formData);
 }
 
 export async function createMedication(patientId: string, _previous: MedicationFormState, formData: FormData): Promise<MedicationFormState> {

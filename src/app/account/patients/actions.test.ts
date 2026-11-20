@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCaregiverTask, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, logMedicationAdministration, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverTask, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, logMedicationAdministration, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -118,7 +118,7 @@ function milestoneForm(values: Record<string, string> = {}) {
 
 function appointmentForm(values: Record<string, string> = {}) {
   const form = new FormData();
-  for (const [key, value] of Object.entries({ title: "Fictional clinic visit", startsAt: "2026-11-21T09:00", startsAtOffset: "-330", endsAt: "", endsAtOffset: "0", location: "Demo clinic", ...values })) form.set(key, value);
+  for (const [key, value] of Object.entries({ patientId, eventType: "doctor_appointment", title: "Fictional clinic visit", startsAt: "2026-11-21T09:00", startsAtOffset: "-330", endsAt: "", endsAtOffset: "0", location: "Demo clinic", notes: "", ...values })) form.set(key, value);
   return form;
 }
 
@@ -648,6 +648,7 @@ describe("appointment server action", () => {
     expect(result).toEqual({ status: "success", message: "Appointment saved." });
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       patient_id: patientId,
+      event_type: "doctor_appointment",
       title: "Fictional clinic visit",
       starts_at: "2026-11-21T03:30:00.000Z",
       source: "caregiver",
@@ -655,6 +656,16 @@ describe("appointment server action", () => {
       created_by: "user-1",
     }));
     expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
+  });
+
+  it("creates an event from the shared calendar form using the selected profile", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null })
+      : { insert });
+    const result = await createCalendarAppointment({ status: "idle", message: "" }, appointmentForm({ eventType: "laboratory_test", title: "Fictional blood test", notes: "Fictional note" }));
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, event_type: "laboratory_test", title: "Fictional blood test", notes: "Fictional note", source: "caregiver" }));
   });
 });
 
