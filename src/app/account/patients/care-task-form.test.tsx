@@ -16,9 +16,12 @@ describe("caregiver task assignment controls", () => {
   });
 
   it("shows completion controls only to the assignee or task creator", () => {
-    const { rerender } = render(<CareTaskStatusForm patientId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" taskId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" status="open" assignedTo="user-2" createdBy="user-1" currentUserId="user-3" />);
+    const { rerender } = render(<CareTaskStatusForm patientId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" taskId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" status="open" assignedTo="user-2" createdBy="user-1" currentUserId="user-3" canMarkMissed />);
     expect(screen.queryByRole("button", { name: /Mark complete/i })).toBeNull();
-    rerender(<CareTaskStatusForm patientId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" taskId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" status="open" assignedTo="user-2" createdBy="user-1" currentUserId="user-2" />);
+    rerender(<CareTaskStatusForm patientId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" taskId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" status="open" assignedTo="user-2" createdBy="user-1" currentUserId="user-2" canMarkMissed />);
     expect(screen.getByRole("button", { name: /Mark complete/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Mark missed/i })).toBeTruthy();
+    rerender(<CareTaskStatusForm patientId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" taskId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" status="open" assignedTo="user-2" createdBy="user-1" currentUserId="user-2" canMarkMissed={false} />);
+    expect(screen.queryByRole("button", { name: /Mark missed/i })).toBeNull();
   });
 });

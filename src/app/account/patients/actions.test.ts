@@ -502,6 +502,22 @@ describe("adult and senior caregiver task actions", () => {
     expect(update).toHaveBeenCalledWith({ status: "complete" });
   });
 
+  it("marks a task missed only after its due time has passed", async () => {
+    const chain = { eq: vi.fn(() => chain), lte: vi.fn(() => chain), select: vi.fn(() => chain), maybeSingle: vi.fn().mockResolvedValue({ data: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }, error: null }) };
+    const update = vi.fn(() => chain);
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { update });
+    const form = new FormData();
+    form.set("taskId", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    form.set("status", "missed");
+    const result = await updateCaregiverTaskStatus(patientId, { status: "idle", message: "" }, form);
+    expect(result).toEqual({ status: "success", message: "Care task marked missed." });
+    expect(update).toHaveBeenCalledWith({ status: "missed" });
+    expect(chain.eq).toHaveBeenCalledWith("status", "open");
+    expect(chain.lte).toHaveBeenCalledWith("due_at", expect.any(String));
+  });
+
   it("does not update a task outside an adult or senior profile", async () => {
     const update = vi.fn();
     mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"

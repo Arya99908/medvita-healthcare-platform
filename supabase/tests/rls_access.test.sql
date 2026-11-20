@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(105);
+select extensions.plan(106);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -140,13 +140,14 @@ select extensions.lives_ok($$insert into public.appointments(id,patient_id,title
 select extensions.throws_ok($$insert into public.appointments(patient_id,title,starts_at,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional unauthorized appointment','2026-11-21 03:30:00+00','11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add an appointment to another patient profile');
 select extensions.lives_ok($$update public.appointments set status='completed' where id='ffffffff-ffff-4fff-8fff-ffffffffffff'$$,'patient with active write access can update own appointment plan');
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
-select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,assigned_to,created_by) values('99999999-9999-4999-8999-999999999999','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional authorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can add an own-profile care task');
+select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,due_at,assigned_to,created_by) values('99999999-9999-4999-8999-999999999999','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional authorized care task','2026-12-21 00:00:00+00','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can add an own-profile care task');
 select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional unauthorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot add a care task to another patient profile');
-select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,assigned_to,created_by) values('abababab-abab-4bab-8bab-abababababab','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task assigned to caregiver','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222')$$,'patient can assign a task to an active writable caregiver');
+select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,due_at,assigned_to,created_by) values('abababab-abab-4bab-8bab-abababababab','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task assigned to caregiver','2026-11-19 00:00:00+00','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222')$$,'patient can assign a task to an active writable caregiver');
 select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task for unlinked user','55555555-5555-4555-8555-555555555555','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot assign a task to an unlinked account');
+select extensions.throws_ok($$update public.caregiver_tasks set status='missed' where id='99999999-9999-4999-8999-999999999999'$$,'42501',null,'care task cannot be marked missed before its due time');
 select extensions.lives_ok($$update public.caregiver_tasks set status='complete' where id='99999999-9999-4999-8999-999999999999'$$,'patient with active write access can complete own care task');
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
-select extensions.lives_ok($$update public.caregiver_tasks set status='complete' where id='abababab-abab-4bab-8bab-abababababab'$$,'assigned caregiver can mark their task complete');
+select extensions.lives_ok($$update public.caregiver_tasks set status='missed' where id='abababab-abab-4bab-8bab-abababababab'$$,'assigned caregiver can mark their past-due task missed');
 with changed as (update public.caregiver_tasks set status='complete' where id='99999999-9999-4999-8999-999999999999' returning id)
 select extensions.is((select count(*) from changed),0::bigint,'caregiver cannot complete another persons task');
 with deleted as (delete from public.caregiver_tasks where id='abababab-abab-4bab-8bab-abababababab' returning id)

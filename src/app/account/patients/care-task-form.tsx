@@ -28,12 +28,11 @@ export function CareTaskForm({ patientId, assignees }: { patientId: string; assi
   </details>;
 }
 
-export function CareTaskStatusForm({ patientId, taskId, status, assignedTo, createdBy, currentUserId }: { patientId: string; taskId: string; status: string; assignedTo: string | null; createdBy: string | null; currentUserId: string }) {
+export function CareTaskStatusForm({ patientId, taskId, status, assignedTo, createdBy, currentUserId, canMarkMissed }: { patientId: string; taskId: string; status: string; assignedTo: string | null; createdBy: string | null; currentUserId: string; canMarkMissed: boolean }) {
   const [state, action, pending] = useActionState(updateCaregiverTaskStatus.bind(null, patientId), initialState);
-  const nextStatus = status === "complete" ? "open" : "complete";
   return <form action={action} className="care-task-status-form">
-    <input type="hidden" name="taskId" value={taskId} /><input type="hidden" name="status" value={nextStatus} />
-    {(assignedTo === currentUserId || createdBy === currentUserId) && <button className="secondary-button" type="submit" disabled={pending}>{pending ? "Saving…" : nextStatus === "complete" ? "Mark complete" : "Reopen task"}</button>}
+    <input type="hidden" name="taskId" value={taskId} />
+    {(assignedTo === currentUserId || createdBy === currentUserId) && (status === "open" ? <><button className="secondary-button" name="status" value="complete" type="submit" disabled={pending}>{pending ? "Saving…" : "Mark complete"}</button>{canMarkMissed && <button className="secondary-button" name="status" value="missed" type="submit" disabled={pending}>{pending ? "Saving…" : "Mark missed"}</button>}</> : <button className="secondary-button" name="status" value="open" type="submit" disabled={pending}>{pending ? "Saving…" : "Reopen task"}</button>)}
     {state.message && <span className={`account-form-message ${state.status}`} role="status">{state.message}</span>}
   </form>;
 }

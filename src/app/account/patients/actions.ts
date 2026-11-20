@@ -207,7 +207,7 @@ const caregiverTaskSchema = z.object({
 const caregiverTaskStatusSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   taskId: z.string().uuid("Choose a valid care task."),
-  status: z.enum(["open", "complete"]),
+  status: z.enum(["open", "complete", "missed"]),
 });
 
 const emergencyContactSchema = z.object({
@@ -536,10 +536,12 @@ export async function updateCaregiverTaskStatus(patientId: string, _previous: Ca
     supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
   ]);
   if (profileError || relationshipError || !profile || !["adult", "senior"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an adult or senior profile is required." };
-  const { data, error } = await supabase.from("caregiver_tasks").update({ status: parsed.data.status }).eq("id", parsed.data.taskId).eq("patient_id", patientId).select("id").maybeSingle();
-  if (error || !data) return { status: "error", message: "This care task could not be updated. Check your access and try again." };
+  let update = supabase.from("caregiver_tasks").update({ status: parsed.data.status }).eq("id", parsed.data.taskId).eq("patient_id", patientId);
+  if (parsed.data.status === "missed") update = update.eq("status", "open").lte("due_at", new Date().toISOString());
+  const { data, error } = await update.select("id").maybeSingle();
+  if (error || !data) return { status: "error", message: parsed.data.status === "missed" ? "Only an open task whose due time has passed can be marked missed." : "This care task could not be updated. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
-  return { status: "success", message: parsed.data.status === "complete" ? "Care task marked complete." : "Care task reopened." };
+  return { status: "success", message: parsed.data.status === "complete" ? "Care task marked complete." : parsed.data.status === "missed" ? "Care task marked missed." : "Care task reopened." };
 }
 
 export async function createMenstrualRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
