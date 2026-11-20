@@ -1833,6 +1833,69 @@ export type Database = {
         }
         Relationships: []
       }
+      vaccination_records: {
+        Row: {
+          administered_on: string | null
+          created_at: string
+          created_by: string | null
+          document_id: string | null
+          dose_label: string | null
+          due_on: string | null
+          id: string
+          notes: string | null
+          patient_id: string
+          source: string
+          status: string
+          vaccine_name: string
+          verification_status: string
+        }
+        Insert: {
+          administered_on?: string | null
+          created_at?: string
+          created_by?: string | null
+          document_id?: string | null
+          dose_label?: string | null
+          due_on?: string | null
+          id?: string
+          notes?: string | null
+          patient_id: string
+          source?: string
+          status?: string
+          vaccine_name: string
+          verification_status?: string
+        }
+        Update: {
+          administered_on?: string | null
+          created_at?: string
+          created_by?: string | null
+          document_id?: string | null
+          dose_label?: string | null
+          due_on?: string | null
+          id?: string
+          notes?: string | null
+          patient_id?: string
+          source?: string
+          status?: string
+          vaccine_name?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vaccination_records_document_patient_fk"
+            columns: ["document_id", "patient_id"]
+            isOneToOne: false
+            referencedRelation: "medical_documents"
+            referencedColumns: ["id", "patient_id"]
+          },
+          {
+            foreignKeyName: "vaccination_records_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vitals: {
         Row: {
           created_at: string

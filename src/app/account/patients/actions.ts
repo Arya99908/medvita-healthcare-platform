@@ -184,10 +184,24 @@ const sleepSchema = z.object({
   }
 });
 
+const vaccinationSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  vaccineName: z.string().trim().min(2, "Enter the vaccine name.").max(100),
+  doseLabel: z.string().trim().max(60).optional().default(""),
+  status: z.enum(["planned", "administered", "cancelled"]),
+  dueOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid due date."),
+  administeredOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid administration date."),
+  documentId: z.string().trim().optional().default("").refine((value) => !value || z.string().uuid().safeParse(value).success, "Choose a valid vaccination document."),
+  notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
+}).superRefine((value, context) => {
+  if (value.status === "planned" && !value.dueOn) context.addIssue({ code: "custom", path: ["dueOn"], message: "Add a due date for a planned vaccination." });
+  if (value.status === "administered" && !value.administeredOn) context.addIssue({ code: "custom", path: ["administeredOn"], message: "Add the administration date for a completed vaccination." });
+});
+
 const documentSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   displayName: z.string().trim().min(2, "Enter a short document label.").max(80, "Keep the label under 80 characters.").refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Remove control characters from the document label."),
-  documentType: z.enum(["care_summary", "test_result", "prescription_copy", "other"]),
+  documentType: z.enum(["care_summary", "test_result", "prescription_copy", "vaccination_certificate", "other"]),
   documentDate: z.string().trim().optional().default("").refine((value) => !value || isValidLocalDateTime(`${value}T00:00`), "Enter a valid document date."),
   visibility: z.enum(["general", "sensitive_adolescent"]),
 });
@@ -440,6 +454,50 @@ export async function createSleepRecord(patientId: string, _previous: CareLogFor
   if (error) return { status: "error", message: "The sleep log could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Sleep log saved as an unverified report." };
+}
+
+export async function createVaccinationRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = vaccinationSchema.safeParse({
+    patientId,
+    vaccineName: formData.get("vaccineName"),
+    doseLabel: formData.get("doseLabel") ?? "",
+    status: formData.get("status"),
+    dueOn: formData.get("dueOn") ?? "",
+    administeredOn: formData.get("administeredOn") ?? "",
+    documentId: formData.get("documentId") ?? "",
+    notes: formData.get("notes") ?? "",
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the vaccination details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving a vaccination record." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["infant", "child"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an infant or child profile is required." };
+  if (parsed.data.documentId) {
+    const { data: document, error: documentError } = await supabase.from("medical_documents").select("id").eq("id", parsed.data.documentId).eq("patient_id", patientId).maybeSingle();
+    if (documentError || !document) return { status: "error", message: "Choose a document linked to this child profile." };
+  }
+  const role = relationship.relationship_role;
+  const source = role === "patient" ? "patient" : role === "doctor" ? "clinician" : "caregiver";
+  const { error } = await supabase.from("vaccination_records").insert({
+    patient_id: patientId,
+    vaccine_name: parsed.data.vaccineName,
+    dose_label: parsed.data.doseLabel || null,
+    status: parsed.data.status,
+    due_on: parsed.data.dueOn || null,
+    administered_on: parsed.data.administeredOn || null,
+    document_id: parsed.data.documentId || null,
+    notes: parsed.data.notes || null,
+    source,
+    verification_status: "unverified",
+    created_by: user.id,
+  });
+  if (error) return { status: "error", message: "The vaccination record could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Vaccination record saved as an unverified caregiver entry." };
 }
 
 export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {

@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, type ChangeEvent } from "react";
 import { Check, ClipboardList, Plus } from "lucide-react";
-import { createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createSleepRecord, createUrinationRecord, createVomitingRecord, type CareLogFormState } from "./actions";
+import { createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createSleepRecord, createUrinationRecord, createVaccinationRecord, createVomitingRecord, type CareLogFormState } from "./actions";
 
 const initialState: CareLogFormState = { status: "idle", message: "" };
 
@@ -54,16 +54,34 @@ function CareLogForm({ patientId, kind }: { patientId: string; kind: "feeding" |
   </details>;
 }
 
-export default function ChildCareForms({ patientId }: { patientId: string }) {
+export default function ChildCareForms({ patientId, vaccinationDocuments = [] }: { patientId: string; vaccinationDocuments?: Array<{ id: string; display_name: string }> }) {
   const [growthState, growthAction, growthPending] = useActionState(createGrowthRecord.bind(null, patientId), initialState);
   const growthFormRef = useRef<HTMLFormElement>(null);
   useEffect(() => { if (growthState.status === "success") growthFormRef.current?.reset(); }, [growthState]);
+  const [vaccinationState, vaccinationAction, vaccinationPending] = useActionState(createVaccinationRecord.bind(null, patientId), initialState);
+  const vaccinationFormRef = useRef<HTMLFormElement>(null);
+  useEffect(() => { if (vaccinationState.status === "success") vaccinationFormRef.current?.reset(); }, [vaccinationState]);
   return <>
     <CareLogForm patientId={patientId} kind="feeding" />
     <CareLogForm patientId={patientId} kind="bowel" />
     <CareLogForm patientId={patientId} kind="vomiting" />
     <CareLogForm patientId={patientId} kind="urination" />
     <CareLogForm patientId={patientId} kind="sleep" />
+    <details className="account-card account-entry-disclosure">
+      <summary className="account-card-heading"><div><span className="micro-label">VACCINATION RECORD</span><h2>Track a vaccination</h2><p>Dates are caregiver-entered; MedVita does not generate a vaccine schedule or send reminders.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></summary>
+      <form ref={vaccinationFormRef} action={vaccinationAction} className="account-profile-form timeline-form">
+        <label htmlFor="vaccine-name">Vaccine name</label><input id="vaccine-name" name="vaccineName" minLength={2} maxLength={100} required />
+        <label htmlFor="vaccine-dose">Dose or series label <span>(optional)</span></label><input id="vaccine-dose" name="doseLabel" maxLength={60} placeholder="For example, dose 1" />
+        <label htmlFor="vaccine-status">Record status</label><select id="vaccine-status" name="status" defaultValue="planned"><option value="planned">Planned</option><option value="administered">Administered</option><option value="cancelled">Cancelled</option></select>
+        <label htmlFor="vaccine-due">Planned or next due date <span>(required when planned)</span></label><input id="vaccine-due" name="dueOn" type="date" />
+        <label htmlFor="vaccine-administered">Administered date <span>(required when administered)</span></label><input id="vaccine-administered" name="administeredOn" type="date" />
+        <label htmlFor="vaccine-document">Vaccination document <span>(optional)</span></label><select id="vaccine-document" name="documentId" defaultValue=""><option value="">No document selected</option>{vaccinationDocuments.map((document) => <option key={document.id} value={document.id}>{document.display_name}</option>)}</select>
+        <label htmlFor="vaccine-notes">Notes <span>(optional)</span></label><textarea id="vaccine-notes" name="notes" maxLength={500} rows={2} />
+        <p className="timeline-privacy-note">Use the child&apos;s clinician or official local schedule to confirm due dates. This record is not a vaccination recommendation.</p>
+        {vaccinationState.message && <p className={`account-form-message ${vaccinationState.status}`} role="status">{vaccinationState.status === "success" && <Check size={15} />}{vaccinationState.message}</p>}
+        <button className="primary-button account-submit" type="submit" disabled={vaccinationPending}><Plus size={16} />{vaccinationPending ? "Saving…" : "Save vaccination"}</button>
+      </form>
+    </details>
     <details className="account-card account-entry-disclosure">
       <summary className="account-card-heading"><div><span className="micro-label">GROWTH MEASUREMENT</span><h2>Add a measurement</h2><p>Unverified measurements only; no growth percentile or assessment.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></summary>
       <form ref={growthFormRef} action={growthAction} className="account-profile-form timeline-form">

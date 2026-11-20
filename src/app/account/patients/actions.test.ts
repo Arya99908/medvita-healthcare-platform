@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -89,6 +89,12 @@ function urinationForm(values: Record<string, string> = {}) {
 function sleepForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ sleepType: "overnight", startedAt: "2026-11-20T08:00", startedAtOffset: "-330", endedAt: "2026-11-20T09:00", endedAtOffset: "-330", notes: "Fictional observation", ...values })) form.set(key, value);
+  return form;
+}
+
+function vaccinationForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ vaccineName: "Fictional sample vaccine", doseLabel: "Dose 1", status: "planned", dueOn: "2026-12-15", administeredOn: "", documentId: "", notes: "Fictional reminder", ...values })) form.set(key, value);
   return form;
 }
 
@@ -414,6 +420,36 @@ describe("child urination and sleep server actions", () => {
     const result = await createSleepRecord(patientId, { status: "idle", message: "" }, sleepForm({ endedAt: "2026-11-20T07:30" }));
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/end time must be after/i);
+    expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("child vaccination server action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert: vi.fn().mockResolvedValue({ error: null }) });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("saves a caregiver-entered planned date without inventing a schedule", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createVaccinationRecord(patientId, { status: "idle", message: "" }, vaccinationForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, vaccine_name: "Fictional sample vaccine", status: "planned", due_on: "2026-12-15", administered_on: null, document_id: null, source: "caregiver", verification_status: "unverified", created_by: "user-1" }));
+  });
+
+  it("requires an administration date before marking a dose administered", async () => {
+    const result = await createVaccinationRecord(patientId, { status: "idle", message: "" }, vaccinationForm({ status: "administered", dueOn: "", administeredOn: "" }));
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/administration date/i);
     expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
   });
 });

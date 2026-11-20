@@ -21,7 +21,7 @@ export default function DocumentForm({ patientId, lifeStage }: { patientId: stri
       <label htmlFor="document-label">Document label</label>
       <input id="document-label" name="displayName" minLength={2} maxLength={80} required placeholder="A short label; do not enter real health data" />
       <label htmlFor="document-type">Type</label>
-      <select id="document-type" name="documentType" defaultValue="other"><option value="care_summary">Care summary</option><option value="test_result">Test result</option><option value="prescription_copy">Prescription copy</option><option value="other">Other</option></select>
+      <select id="document-type" name="documentType" defaultValue="other"><option value="care_summary">Care summary</option><option value="test_result">Test result</option><option value="prescription_copy">Prescription copy</option><option value="vaccination_certificate">Vaccination certificate</option><option value="other">Other</option></select>
       <label htmlFor="document-date">Document date <span>(optional)</span></label>
       <input id="document-date" name="documentDate" type="date" />
       <label htmlFor="document-file">Choose a file</label>
