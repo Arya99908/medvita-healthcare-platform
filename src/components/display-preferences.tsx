@@ -1,7 +1,7 @@
 "use client";
 
-import { Contrast, Settings2 } from "lucide-react";
-import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { Contrast, Settings2, Square, Volume2 } from "lucide-react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 type DisplayPreferences = {
   fontScale: number;
@@ -77,6 +77,51 @@ export function useDisplayPreferences() {
 
 export function DisplayPreferencesControl() {
   const { fontScale, highContrast, changeFontScale, toggleHighContrast } = useDisplayPreferences();
+  const [speaking, setSpeaking] = useState(false);
+  const [speechMessage, setSpeechMessage] = useState("");
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  useEffect(() => () => window.speechSynthesis?.cancel(), []);
+
+  function stopReading() {
+    window.speechSynthesis?.cancel();
+    utteranceRef.current = null;
+    setSpeaking(false);
+  }
+
+  function toggleReadAloud() {
+    if (speaking) {
+      stopReading();
+      return;
+    }
+    if (!window.speechSynthesis || typeof SpeechSynthesisUtterance !== "function") {
+      setSpeechMessage("Read-aloud is not supported by this browser. You can use your device screen reader.");
+      return;
+    }
+    const mainContent = document.querySelector("main");
+    const pageText = (mainContent?.innerText ?? mainContent?.textContent)?.replace(/\s+/g, " ").trim();
+    if (!pageText) {
+      setSpeechMessage("There is no page text available to read yet.");
+      return;
+    }
+    const limit = 8_000;
+    const utterance = new SpeechSynthesisUtterance(pageText.slice(0, limit));
+    utterance.lang = "en-IN";
+    utterance.onend = () => {
+      setSpeaking(false);
+      utteranceRef.current = null;
+    };
+    utterance.onerror = () => {
+      setSpeaking(false);
+      utteranceRef.current = null;
+      setSpeechMessage("Read-aloud stopped. Check your device speech settings or use its screen reader.");
+    };
+    utteranceRef.current = utterance;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    setSpeaking(true);
+    setSpeechMessage(pageText.length > limit ? "Reading the first part of this page in English." : "Reading this page in English using your device speech voice.");
+  }
 
   return (
     <details className="display-preferences floating">
@@ -91,6 +136,10 @@ export function DisplayPreferencesControl() {
         <button className="display-contrast-toggle" type="button" aria-pressed={highContrast} onClick={toggleHighContrast}>
           <Contrast size={16} /> High contrast <span>{highContrast ? "On" : "Off"}</span>
         </button>
+        <button className="display-read-aloud" type="button" aria-pressed={speaking} onClick={toggleReadAloud}>
+          {speaking ? <Square size={15} /> : <Volume2 size={16} />}{speaking ? "Stop reading" : "Read page aloud (English)"}
+        </button>
+        {speechMessage && <p className="display-speech-status" role="status">{speechMessage}</p>}
       </div>
     </details>
   );
