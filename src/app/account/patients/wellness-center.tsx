@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useState, useSyncExternalStore } from "react";
 import { Activity, Apple, Check, ChevronDown, CircleHelp, Leaf, Search, ShieldCheck, Sparkles, Target } from "lucide-react";
 import LocalDateTime from "@/components/local-date-time";
 import type { Json } from "@/lib/database.types";
 import { wellnessCategoryLabels, wellnessSuggestions, type WellnessCategory, type WellnessStage } from "@/lib/wellness-content";
+import { buildWellnessProgress, getLocalDayKey } from "@/lib/wellness-summary";
 import { logWellnessEntry, saveWellnessSuggestion, updateWellnessPlan, type WellnessActionState } from "./wellness-actions";
 import { createCalendarAppointment, type AppointmentFormState } from "./actions";
 
@@ -13,6 +14,7 @@ type Entry = { id: string; plan_id: string | null; record_type: string; value: J
 type Constraint = { name: string };
 const initialState: WellnessActionState = { status: "idle", message: "" };
 const initialCalendarState: AppointmentFormState = { status: "idle", message: "" };
+const subscribeToLocalDay = () => () => {};
 const categoryIcons: Record<WellnessCategory, typeof Activity> = { exercise: Activity, nutrition: Apple, habit: Leaf };
 const categoryOrder: WellnessCategory[] = ["exercise", "nutrition", "habit"];
 
@@ -31,13 +33,14 @@ function displayEntry(entry: Entry) {
 }
 
 export default function WellnessCenter({
-  patientId, lifeStage, canWrite, plans, entries, conditions, allergies,
+  patientId, lifeStage, canWrite, plans, entries, entriesTruncated, conditions, allergies,
 }: {
   patientId: string;
   lifeStage: WellnessStage;
   canWrite: boolean;
   plans: Plan[];
   entries: Entry[];
+  entriesTruncated: boolean;
   conditions: Constraint[];
   allergies: Constraint[];
 }) {
@@ -45,24 +48,28 @@ export default function WellnessCenter({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(wellnessSuggestions[0]?.id ?? "");
   const [logType, setLogType] = useState<Entry["record_type"]>("habit");
+  const localToday = useSyncExternalStore(subscribeToLocalDay, () => getLocalDayKey(new Date()), () => null);
   const [saveState, saveAction, saving] = useActionState(saveWellnessSuggestion, initialState);
   const [logState, logAction, logging] = useActionState(logWellnessEntry, initialState);
   const activePlans = plans.filter((plan) => plan.status === "active");
+  const progress = useMemo(() => localToday === null ? null : buildWellnessProgress(entries, new Date(`${localToday}T12:00:00`)), [entries, localToday]);
   const filtered = useMemo(() => wellnessSuggestions.filter((item) =>
     (category === "all" || item.category === category)
     && (lifeStage !== "infant" || !["balanced-meal", "meal-observation"].includes(item.id))
     && `${item.title} ${item.why(lifeStage)} ${item.limitation}`.toLowerCase().includes(query.trim().toLowerCase())), [category, lifeStage, query]);
   const selectedSuggestion = wellnessSuggestions.find((item) => item.id === selected && (lifeStage !== "infant" || !["balanced-meal", "meal-observation"].includes(item.id))) ?? filtered[0];
-  const selectedCount = entries.length;
-
   return <section className="account-card wellness-center" aria-labelledby="wellness-center-title">
     <div className="account-card-heading"><div><span className="micro-label">MEDVITA REMEDIES &amp; WELLNESS</span><h2 id="wellness-center-title">Small steps, on your terms</h2><p>Explore general education, save personal goals, and keep a dated log. Nothing here diagnoses or treats a condition.</p></div><span className="account-card-icon"><Leaf size={18} /></span></div>
 
     {(conditions.length > 0 || allergies.length > 0) && <div className="account-safety-note"><ShieldCheck size={17} /><span>Recorded profile information may affect what is suitable. This center does not automatically assess restrictions or filter foods. Follow the care team&apos;s guidance and check ingredients against known allergies{allergies.length ? ` (${allergies.map((item) => item.name).join(", ")})` : ""}{conditions.length ? `; recorded condition notes: ${conditions.map((item) => item.name).join(", ")}` : ""}.</span></div>}
     {lifeStage === "infant" && <p className="timeline-privacy-note">For infant profiles, this center supports caregiver observation and logging only. Use the pediatric feeding records and follow individualized advice from the child&apos;s care team.</p>}
 
-    <div className="wellness-week-summary" aria-label="Wellness activity summary"><div><strong>{activePlans.length}</strong><span>active goals</span></div><div><strong>{selectedCount}</strong><span>loaded logs</span></div><div><strong>{entries.filter((entry) => entry.record_type === "exercise").length}</strong><span>movement logs</span></div></div>
-    <p className="timeline-privacy-note">Recent logs below are the entries loaded for this profile; counts are not a health score or a complete activity measure.</p>
+    <div className="wellness-week-summary" aria-label="Wellness activity summary"><div><strong>{activePlans.length}</strong><span>active goals</span></div><div><strong>{progress?.week.entries ?? "—"}</strong><span>logs in the last 7 days</span></div><div><strong>{progress?.month.entries ?? "—"}</strong><span>logs this month</span></div></div>
+    {progress ? <div className="wellness-progress-reports" aria-label="Personal wellness progress reports">
+      <article><span className="micro-label">LAST 7 DAYS</span><h3>Weekly progress</h3><p><strong>{progress.week.activeDays} of 7 days</strong> with at least one recorded entry</p><p>{progress.week.entries} entries · {progress.week.exerciseMinutes} recorded movement minutes</p></article>
+      <article><span className="micro-label">MONTH TO DATE</span><h3>{new Intl.DateTimeFormat(undefined, { month: "long" }).format(new Date(`${progress.today}T12:00:00`))} wellness summary</h3><p><strong>{progress.month.activeDays} active days</strong> with a logged entry</p><p>{progress.month.entries} entries · {progress.month.exerciseMinutes} recorded movement minutes</p></article>
+    </div> : <p className="timeline-privacy-note" role="status">Preparing summaries for your local calendar…</p>}
+    {entriesTruncated ? <p className="timeline-privacy-note">These summaries use the latest 1,000 saved entries, so totals and streaks may be incomplete. They describe saved logs only, not overall health or activity.</p> : <p className="timeline-privacy-note">Summaries use the saved entries available for this profile. A day without a log does not mean no activity occurred; these are not health scores or complete activity measures.</p>}
 
     <div className="wellness-discovery">
       <div className="wellness-section-heading"><div><span className="micro-label">DISCOVER</span><h3>Browse by category</h3></div><Sparkles size={18} /></div>
@@ -100,10 +107,10 @@ export default function WellnessCenter({
     </details>
 
     <div className="wellness-saved-plans"><div className="wellness-section-heading"><div><span className="micro-label">PERSONAL GOALS</span><h3>Saved wellness goals</h3></div><Target size={18} /></div>
-      {plans.length ? <div className="timeline-event-list">{plans.map((plan) => <article className="timeline-event" key={plan.id}><div className="timeline-event-heading"><span className="timeline-event-type">{wellnessCategoryLabels[plan.category as WellnessCategory] ?? plan.category} · {plan.status.replaceAll("_", " ")}</span><LocalDateTime value={plan.created_at} /></div><h4>{plan.title}</h4>{plan.description && <p>{plan.description.split(" Source:")[0]}</p>}{canWrite && plan.status !== "archived" && plan.status !== "complete" && <><WellnessPlanStatusForm patientId={patientId} plan={plan} /><WellnessCalendarForm patientId={patientId} plan={plan} /></>}</article>)}</div> : <p className="care-log-empty">No saved goals yet. Explore a suggestion above to add one.</p>}
+      {plans.length ? <div className="timeline-event-list">{plans.map((plan) => { const streak = progress?.streakDaysByPlan[plan.id] ?? 0; return <article className="timeline-event" key={plan.id}><div className="timeline-event-heading"><span className="timeline-event-type">{wellnessCategoryLabels[plan.category as WellnessCategory] ?? plan.category} · {plan.status.replaceAll("_", " ")}</span><LocalDateTime value={plan.created_at} /></div><h4>{plan.title}</h4><p className="wellness-goal-streak">Current goal-log streak: <strong>{progress ? `${streak === 365 ? "365+" : streak} ${streak === 1 ? "day" : "days"}` : "…"}</strong></p>{plan.description && <p>{plan.description.split(" Source:")[0]}</p>}{canWrite && plan.status !== "archived" && plan.status !== "complete" && <><WellnessPlanStatusForm patientId={patientId} plan={plan} /><WellnessCalendarForm patientId={patientId} plan={plan} /></>}</article>; })}</div> : <p className="care-log-empty">No saved goals yet. Explore a suggestion above to add one.</p>}
     </div>
 
-    <details className="wellness-recent-entries"><summary>Recent entries ({entries.length})</summary>{entries.length ? <div className="timeline-event-list">{entries.map((entry) => { const displayed = displayEntry(entry); return <article className="timeline-event" key={entry.id}><div className="timeline-event-heading"><span className="timeline-event-type">{displayed.title}</span><LocalDateTime value={entry.recorded_at} /></div>{displayed.note && <p>{displayed.note}</p>}</article>; })}</div> : <p className="care-log-empty">No recent wellness entries.</p>}</details>
+    <details className="wellness-recent-entries"><summary>Recent entries (latest {Math.min(entries.length, 20)} of {entries.length})</summary>{entries.length ? <div className="timeline-event-list">{entries.slice(0, 20).map((entry) => { const displayed = displayEntry(entry); return <article className="timeline-event" key={entry.id}><div className="timeline-event-heading"><span className="timeline-event-type">{displayed.title}</span><LocalDateTime value={entry.recorded_at} /></div>{displayed.note && <p>{displayed.note}</p>}</article>; })}</div> : <p className="care-log-empty">No recent wellness entries.</p>}</details>
     <p className="timeline-privacy-note">General education only. No home remedy is presented as a cure; no medication, supplement, restrictive diet, or clinical target is recommended. Seek qualified advice for individual restrictions.</p>
   </section>;
 }
