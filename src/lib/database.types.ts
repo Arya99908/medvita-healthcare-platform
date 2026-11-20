@@ -473,6 +473,57 @@ export type Database = {
           },
         ]
       }
+      clinical_notes: {
+        Row: {
+          amends_note_id: string | null
+          body: string
+          created_at: string
+          doctor_user_id: string
+          follow_up_on: string | null
+          id: string
+          note_kind: string
+          patient_id: string
+          title: string
+        }
+        Insert: {
+          amends_note_id?: string | null
+          body: string
+          created_at?: string
+          doctor_user_id: string
+          follow_up_on?: string | null
+          id?: string
+          note_kind: string
+          patient_id: string
+          title: string
+        }
+        Update: {
+          amends_note_id?: string | null
+          body?: string
+          created_at?: string
+          doctor_user_id?: string
+          follow_up_on?: string | null
+          id?: string
+          note_kind?: string
+          patient_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinical_notes_amends_note_id_fkey"
+            columns: ["amends_note_id"]
+            isOneToOne: false
+            referencedRelation: "clinical_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_notes_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       consent_records: {
         Row: {
           created_at: string

@@ -23,7 +23,7 @@ describe("caregiver invitation panel", () => {
     render(<InvitationPanel patientId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" invitations={[]} relationships={[]} loadError={false} />);
     fireEvent.change(screen.getByLabelText("Relationship"), { target: { value: "doctor" } });
     expect(screen.getByText(/Only a verified MedVita doctor can accept/i)).toBeTruthy();
-    expect(screen.getByText(/read-only, expires after 90 days/i)).toBeTruthy();
+    expect(screen.getByText(/add clinician-authored notes for 90 days/i)).toBeTruthy();
     expect(screen.queryByLabelText(/Allow them to add and update care records/)).toBeNull();
   });
 });

@@ -50,7 +50,7 @@ describe("caregiver invitation action", () => {
     const result = await createPatientInvitation(patientId, { status: "idle", message: "" }, invitationForm({ email: "doctor@example.invalid", role: "doctor" }));
 
     expect(supabase.rpc).toHaveBeenCalledWith("create_patient_invitation", { p_patient_id: patientId, p_invited_email: "doctor@example.invalid", p_relationship_role: "doctor", p_can_write: false });
-    expect(result.message).toContain("read-only access for 90 days");
+    expect(result.message).toContain("clinician-note access for 90 days");
     expect(result.invitationPath).toContain("/account/invitations/accept?token=");
   });
 

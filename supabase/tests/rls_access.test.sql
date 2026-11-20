@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(122);
+select extensions.plan(133);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -256,13 +256,16 @@ reset role;
 insert into public.patient_relationships(patient_id,user_id,relationship_role,can_read,can_write,status,created_by)
 values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','77777777-7777-4777-8777-777777777777','doctor',true,false,'active','22222222-2222-4222-8222-222222222222');
 insert into public.access_permissions(patient_id,user_id,permission,granted_by)
-values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','77777777-7777-4777-8777-777777777777','read','22222222-2222-4222-8222-222222222222');
+values
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','77777777-7777-4777-8777-777777777777','read','22222222-2222-4222-8222-222222222222'),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','77777777-7777-4777-8777-777777777777','clinical_notes','22222222-2222-4222-8222-222222222222');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','77777777-7777-4777-8777-777777777777',true);
 select extensions.is((select count(*) from public.patient_profiles where id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'unverified doctor cannot read a patient profile even with a relationship and read grant');
+select extensions.throws_ok($$insert into public.clinical_notes(patient_id,doctor_user_id,note_kind,title,body) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','77777777-7777-4777-8777-777777777777','consultation','Unverified note','Should be rejected')$$,'42501',null,'unverified doctor cannot add a clinical note despite a direct permission row');
 reset role;
 delete from public.patient_relationships where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='77777777-7777-4777-8777-777777777777' and relationship_role='doctor';
-delete from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='77777777-7777-4777-8777-777777777777' and permission='read';
+delete from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='77777777-7777-4777-8777-777777777777' and permission in ('read','clinical_notes');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.throws_ok($$select * from public.create_patient_invitation('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','medvita-invitee@example.invalid','doctor',false)$$,'42501',null,'patient cannot invite an unverified doctor');
@@ -272,10 +275,25 @@ select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444'
 select extensions.lives_ok($$select public.accept_patient_invitation(current_setting('medvita.doctor_invitation_token'))$$,'verified doctor with the invited email can accept patient consent');
 select extensions.is((select count(*) from public.patient_relationships where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and relationship_role='doctor' and status='active' and can_read and not can_write),1::bigint,'accepted doctor relationship is active and read-only');
 select extensions.ok((select expires_at > now()+interval '89 days' and expires_at <= now()+interval '91 days' from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='read' and revoked_at is null),'doctor read permission expires after 90 days');
+select extensions.ok((select expires_at > now()+interval '89 days' and expires_at <= now()+interval '91 days' from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='clinical_notes' and revoked_at is null),'doctor clinical-note permission expires after 90 days');
 select extensions.is((select count(*) from public.patient_profiles where id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),1::bigint,'consented doctor can read the linked patient profile');
+select extensions.lives_ok($$insert into public.clinical_notes(id,patient_id,doctor_user_id,note_kind,title,body,follow_up_on) values('99999999-9999-4999-8999-999999999997','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','44444444-4444-4444-8444-444444444444','follow_up','Fictional clinician follow-up','Fictional clinician-authored note','2026-12-01')$$,'consented verified doctor can append a clinical note');
+select extensions.is((select count(*) from public.clinical_notes where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and id='99999999-9999-4999-8999-999999999997'),1::bigint,'clinician note is visible to its author');
+select extensions.throws_ok($$update public.clinical_notes set body='Changed content' where id='99999999-9999-4999-8999-999999999997'$$,'42501',null,'clinician notes cannot be edited after saving');
+select extensions.is(jsonb_array_length(public.export_my_data() #> '{tables,clinical_notes}'),1,'clinical notes are included in the RLS-filtered account export');
 select extensions.throws_ok($$insert into public.health_events(patient_id,event_type,title,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','note','Doctor write denied','clinician','44444444-4444-4444-8444-444444444444')$$,'42501',null,'read-only doctor cannot write patient health events');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.is((select count(*) from public.clinical_notes where id='99999999-9999-4999-8999-999999999997'),1::bigint,'linked reader can see a clinician-authored note');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.lives_ok($$update public.access_permissions set revoked_at=now() where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='clinical_notes'$$,'patient can revoke only the doctor clinical-note permission');
+select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444',true);
+select extensions.throws_ok($$insert into public.clinical_notes(patient_id,doctor_user_id,note_kind,title,body) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','44444444-4444-4444-8444-444444444444','consultation','Expired consent test','Should be rejected')$$,'42501',null,'doctor cannot append notes after note consent is revoked');
+select extensions.is(medvita_private.has_patient_access('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','clinical_notes'),false,'revoked note consent removes clinician-note permission');
 select extensions.lives_ok($$update public.patient_relationships set status='revoked',revoked_at=now() where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and relationship_role='doctor'$$,'doctor can remove their own relationship');
 select extensions.ok((select revoked_at is not null from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='read'),'revoking doctor relationship also revokes patient read consent');
+select extensions.ok((select revoked_at is not null from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='clinical_notes'),'revoking doctor relationship also revokes clinical-note consent');
 select extensions.is(medvita_private.has_patient_access('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','read'),false,'doctor cannot read after revoking their relationship');
 
 reset role;

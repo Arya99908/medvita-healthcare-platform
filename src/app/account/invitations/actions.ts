@@ -29,7 +29,7 @@ export async function createPatientInvitation(patientId: string, _previous: Invi
   });
   if (error || !data?.[0]?.invitation_token) return { ...emptyState, status: "error", message: error?.message?.includes("already exists") ? "An active invitation already exists for this email." : error?.message?.includes("verified doctor") ? "Doctor invitations require a verified MedVita professional profile." : "The invitation could not be created. Check access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
-  const accessDescription = parsed.data.role === "doctor" ? "read-only access for 90 days" : parsed.data.canWrite ? "read and care-record update access" : "read-only access";
+  const accessDescription = parsed.data.role === "doctor" ? "read access and clinician-note access for 90 days (no general record edits)" : parsed.data.canWrite ? "read and care-record update access" : "read-only access";
   return { status: "success", message: `Invitation link created with ${accessDescription}. The link expires ${new Date(data[0].invitation_expires_at).toLocaleString()}. Share it only with ${parsed.data.email}.`, invitationPath: `/account/invitations/accept?token=${encodeURIComponent(data[0].invitation_token)}` };
 }
 
