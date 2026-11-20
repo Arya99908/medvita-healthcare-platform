@@ -21,6 +21,7 @@ import { CareTaskForm, CareTaskStatusForm } from "../care-task-form";
 import MenstrualJournalForm from "../menstrual-journal-form";
 import LocalDateTime from "@/components/local-date-time";
 import PatientAISummary from "../patient-ai-summary";
+import WellnessCenter from "../wellness-center";
 
 const stageLabels: Record<string, string> = { infant: "Infant", child: "Child", adolescent: "Adolescent", adult: "Adult", senior: "Senior" };
 
@@ -129,6 +130,10 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     sources: (aiSources ?? []).filter((source) => source.report_id === report.id),
     reviews: (aiReviews ?? []).filter((review) => review.report_id === report.id),
   }));
+  const [{ data: wellnessPlans, error: wellnessPlansError }, { data: wellnessEntries, error: wellnessEntriesError }] = canRead ? await Promise.all([
+    supabase.from("wellness_plans").select("id,title,category,description,status,created_at").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(100),
+    supabase.from("wellness_records").select("id,plan_id,record_type,value,recorded_at").eq("patient_id", patientId).eq("visibility", "general").order("recorded_at", { ascending: false }).limit(100),
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
 
   return <main className="account-page">
     <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Your profiles</Link><Link href="/account/care" className="account-back-link"><ClipboardList size={15} /> Care tasks</Link><Link href="/account/notifications" className="account-back-link"><Bell size={15} /> Notifications</Link><Link href="/account/calendar" className="account-back-link"><CalendarDays size={15} /> Calendar</Link><Link href="/" className="account-back-link">Presentation demo</Link></div></header>
@@ -136,6 +141,8 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       <div className="account-welcome"><span className="micro-label">{stageLabels[profile.life_stage] ?? "PATIENT"} TIMELINE</span><h1>{profile.display_name}</h1><p>Personal entries for this profile, subject to its current access permissions.</p>{canRead && <Link className="account-record-link" href={`/account/patients/${patientId}/reports`}><ChartNoAxesCombined size={15} /> Health reports</Link>}</div>
       <div className="account-safety-note"><ShieldCheck size={17} /><span>Use fictional data only. Entries are unverified personal notes, not diagnoses, prescriptions, or medical advice.</span></div>
       {canRead && <PatientAISummary patientId={patientId} enabled={canGenerateAISummary} reports={aiReportsWithSources ?? []} loadError={Boolean(aiReportsError || aiSourcesError || aiReviewsError)} />}
+      {canRead && <WellnessCenter patientId={patientId} lifeStage={profile.life_stage as "infant" | "child" | "adolescent" | "adult" | "senior"} canWrite={Boolean(canWrite)} plans={wellnessPlans ?? []} entries={wellnessEntries ?? []} conditions={(emergencyConditions ?? []).map((item) => ({ name: item.name }))} allergies={(emergencyAllergies ?? []).map((item) => ({ name: item.substance }))} />}
+      {canRead && (wellnessPlansError || wellnessEntriesError) && <p className="account-form-message error" role="status">Some wellness records could not be loaded. The database still controls access to available records.</p>}
       {canRead && <PatientEmergencyPanel patientId={patientId} patientName={profile.display_name} dateOfBirth={profile.date_of_birth} conditions={(emergencyConditions ?? []).map((item) => ({ id: item.id, label: item.name }))} allergies={(emergencyAllergies ?? []).map((item) => ({ id: item.id, label: item.substance, detail: item.reaction }))} medications={(medications ?? []).filter((item) => item.status === "active").map((item) => ({ id: item.id, label: item.medicine_name, detail: [item.strength, item.route].filter(Boolean).join(" · ") }))} contacts={emergencyContacts ?? []} alerts={emergencyAlerts ?? []} canWrite={Boolean(canWrite)} contactsError={Boolean(emergencyContactsError)} alertsError={Boolean(emergencyAlertsError)} summaryError={Boolean(emergencyAllergiesError || emergencyConditionsError || medicationsError)} />}
       {canRead && <CaregiverHandoverPanel patientId={patientId} currentUserId={user.id} lifeStage={profile.life_stage} recipients={handoverRecipients ?? []} handovers={handovers ?? []} canWrite={Boolean(canWrite)} loadError={Boolean(handoversError || handoverRecipientsError)} />}
       {canInviteCaregiver && <InvitationPanel patientId={patientId} invitations={invitations ?? []} relationships={inviteRelationships ?? []} loadError={Boolean(invitationsError || inviteRelationshipsError)} />}

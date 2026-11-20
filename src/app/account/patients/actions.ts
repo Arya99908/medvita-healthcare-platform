@@ -739,7 +739,9 @@ export async function createAppointment(patientId: string, _previous: Appointmen
 
 export async function createCalendarAppointment(_previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {
   const patientId = String(formData.get("patientId") ?? "");
-  return createAppointment(patientId, _previous, formData);
+  const result = await createAppointment(patientId, _previous, formData);
+  if (result.status === "success") revalidatePath("/account/calendar");
+  return result;
 }
 
 export async function updateAppointment(patientId: string, appointmentId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {

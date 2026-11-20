@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(142);
+select extensions.plan(146);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -147,6 +147,9 @@ select extensions.lives_ok($$insert into public.appointments(id,patient_id,title
 select extensions.throws_ok($$insert into public.appointments(patient_id,title,starts_at,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional unauthorized appointment','2026-11-21 03:30:00+00','11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add an appointment to another patient profile');
 select extensions.lives_ok($$update public.appointments set status='completed' where id='ffffffff-ffff-4fff-8fff-ffffffffffff'$$,'patient with active write access can update own appointment plan');
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.lives_ok($$insert into public.wellness_plans(id,patient_id,title,category,description,source,status,created_by,visibility) values('12121212-1212-4121-8121-121212121212','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional movement routine','exercise','General education only','patient','active','22222222-2222-4222-8222-222222222222','general')$$,'patient can save a wellness goal to their profile');
+select extensions.lives_ok($$insert into public.wellness_records(id,patient_id,plan_id,record_type,value,created_by,visibility) values('13131313-1313-4131-8131-131313131313','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','12121212-1212-4121-8121-121212121212','exercise','{"minutes":15}'::jsonb,'22222222-2222-4222-8222-222222222222','general')$$,'patient can log a wellness entry linked to their own goal');
+select extensions.is((select count(*) from public.wellness_records where id='13131313-1313-4131-8131-131313131313'),1::bigint,'patient can read their saved wellness entry');
 select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,due_at,assigned_to,created_by) values('99999999-9999-4999-8999-999999999999','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional authorized care task','2026-12-21 00:00:00+00','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can add an own-profile care task');
 select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional unauthorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot add a care task to another patient profile');
 select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,due_at,assigned_to,created_by) values('abababab-abab-4bab-8bab-abababababab','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task assigned to caregiver','2026-11-19 00:00:00+00','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222')$$,'patient can assign a task to an active writable caregiver');
@@ -301,6 +304,7 @@ select extensions.is(jsonb_array_length(public.export_my_data() #> '{tables,clin
 select extensions.is(jsonb_array_length(public.export_my_data() #> '{tables,ai_report_reviews}'),1,'AI summary reviews are included in the RLS-filtered account export');
 select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444',true);
 select extensions.throws_ok($$insert into public.health_events(patient_id,event_type,title,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','note','Doctor write denied','clinician','44444444-4444-4444-8444-444444444444')$$,'42501',null,'read-only doctor cannot write patient health events');
+select extensions.throws_ok($$insert into public.wellness_records(patient_id,record_type,value,created_by,visibility) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','habit','{}'::jsonb,'44444444-4444-4444-8444-444444444444','general')$$,'42501',null,'read-only doctor cannot add wellness entries without write access');
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
 select extensions.is((select count(*) from public.clinical_notes where id='99999999-9999-4999-8999-999999999997'),1::bigint,'linked reader can see a clinician-authored note');
 reset role;
