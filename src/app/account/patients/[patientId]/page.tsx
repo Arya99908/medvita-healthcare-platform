@@ -13,6 +13,7 @@ import PatientEmergencyPanel from "../patient-emergency-panel";
 import CaregiverHandoverPanel from "../caregiver-handover-panel";
 import InvitationPanel from "../../invitations/invitation-panel";
 import DocumentForm from "../document-form";
+import DocumentOCR from "../document-ocr";
 import SymptomForm from "../symptom-form";
 import ChildCareForms from "../child-care-forms";
 import VitalForm from "../vital-form";
@@ -111,9 +112,15 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
   const { data: documents, error: documentsError } = canRead
     ? await supabase.from("medical_documents").select("id,display_name,document_type,document_date,storage_path,upload_status,verification_status,visibility,created_at").eq("patient_id", patientId).order("created_at", { ascending: false })
     : { data: [], error: null };
+  const documentIds = (documents ?? []).map((document) => document.id);
+  const { data: documentExtractions, error: documentExtractionsError } = canRead && documentIds.length > 0
+    ? await supabase.from("extracted_document_data").select("id,document_id,extracted_fields,review_status,created_at").eq("patient_id", patientId).in("document_id", documentIds).order("created_at", { ascending: false }).limit(100)
+    : { data: [], error: null };
   const documentsWithLinks = await Promise.all((documents ?? []).map(async (document) => {
     const { data } = await supabase.storage.from("medical-documents").createSignedUrl(document.storage_path, 300, { download: document.display_name });
-    return { ...document, downloadUrl: data?.signedUrl ?? null };
+    const extension = document.storage_path.split(".").pop()?.toLowerCase();
+    const mimeType = extension === "pdf" ? "application/pdf" : extension === "png" ? "image/png" : "image/jpeg";
+    return { ...document, mimeType, downloadUrl: data?.signedUrl ?? null, extractions: (documentExtractions ?? []).filter((item) => item.document_id === document.id) };
   }));
   const { data: aiReports, error: aiReportsError } = canRead
     ? await supabase.from("ai_reports").select("id,created_at,date_range_start,date_range_end,report_json,review_status").eq("patient_id", patientId).eq("report_type", "patient_history_summary").eq("visibility", "general").order("created_at", { ascending: false }).limit(5)
@@ -159,8 +166,9 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       {!canRead && <div className="account-empty-state timeline-access-state"><Clock3 size={22} /><strong>Access is not active</strong><span>This profile has no active record permission for your account. A pending guardian request does not grant access.</span></div>}
       {canRead && <section className="account-card" aria-labelledby="documents-title"><div className="account-card-heading"><div><span className="micro-label">PRIVATE FILES</span><h2 id="documents-title">Documents</h2><p>Files remain private. Download links expire after five minutes.</p></div><span className="account-card-icon"><FileText size={18} /></span></div>
         {documentsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Documents could not be loaded</strong><span>Reload the page or sign in again.</span></div>
-          : documentsWithLinks.length ? <div className="timeline-event-list">{documentsWithLinks.map((document) => <article key={document.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{document.document_type.replaceAll("_", " ")}</span><span className="timeline-verification">{document.verification_status === "verified" ? "Verified" : "Unverified file"}</span></div><h3>{document.display_name}</h3>{document.document_date && <p>Document date: {document.document_date}</p>}{document.downloadUrl ? <a className="account-record-link" href={document.downloadUrl} rel="noreferrer">Download file</a> : <p>Download is unavailable; reload the page to try again.</p>}</article>)}</div>
+          : documentsWithLinks.length ? <div className="timeline-event-list">{documentsWithLinks.map((document) => <article key={document.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{document.document_type.replaceAll("_", " ")}</span><span className="timeline-verification">{document.verification_status === "verified" ? "Verified" : "Unverified file"}</span></div><h3>{document.display_name}</h3>{document.document_date && <p>Document date: {document.document_date}</p>}{document.downloadUrl ? <a className="account-record-link" href={document.downloadUrl} rel="noreferrer">Download file</a> : <p>Download is unavailable; reload the page to try again.</p>}<DocumentOCR patientId={patientId} documentId={document.id} documentName={document.display_name} mimeType={document.mimeType} downloadUrl={document.downloadUrl} canWrite={Boolean(canWrite)} extractions={document.extractions ?? []} /></article>)}</div>
             : <div className="account-empty-state"><FileText size={22} /><strong>No documents saved</strong><span>Only fictional files should be used in this prototype.</span></div>}
+        {documentExtractionsError && <p className="account-form-message error" role="status">Saved OCR review items could not be loaded.</p>}
       </section>}
       {canRead && <section className="account-card" aria-labelledby="symptoms-title"><div className="account-card-heading"><div><span className="micro-label">SYMPTOM LOG</span><h2 id="symptoms-title">Observations</h2><p>Self-reported entries; severity is not a clinical assessment.</p></div><span className="account-card-icon"><Activity size={18} /></span></div>
         {symptomsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Observations could not be loaded</strong><span>Reload the page or sign in again.</span></div>

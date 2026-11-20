@@ -30,7 +30,7 @@ export default function DocumentForm({ patientId, lifeStage }: { patientId: stri
         <label htmlFor="document-visibility">Privacy</label>
         <select id="document-visibility" name="visibility" defaultValue="general"><option value="general">General profile file</option><option value="sensitive_adolescent">Sensitive adolescent file</option></select>
       </> : <input type="hidden" name="visibility" value="general" />}
-      <p className="timeline-privacy-note">Use fictional files only. No OCR or AI analysis runs on uploaded files. The file name is not stored.</p>
+      <p className="timeline-privacy-note">Use fictional files only. Optional OCR runs on this device and does not use AI. The file name is not stored.</p>
       {state.message && <p className={`account-form-message ${state.status}`} role="status">{state.status === "success" && <Check size={15} />}{state.message}</p>}
       <button className="primary-button account-submit" type="submit" disabled={pending}><Plus size={16} />{pending ? "Uploading…" : "Upload document"}</button>
     </form>

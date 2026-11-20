@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(146);
+select extensions.plan(150);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -221,8 +221,14 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select extensions.lives_ok($$insert into public.medication_records(id,patient_id,medicine_name,created_by) values('cccccccc-cccc-4ccc-8ccc-cccccccccccc','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional authorized medicine','11111111-1111-4111-8111-111111111111')$$,'patient with active write access can add an own-profile medicine note');
 select extensions.throws_ok($$insert into public.medication_records(patient_id,medicine_name,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional unauthorized medicine','11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add a medicine note to another patient profile');
-select extensions.lives_ok($$insert into public.medical_documents(patient_id,storage_path,document_type,display_name,uploaded_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/general/fictional.pdf','other','Fictional authorized document','11111111-1111-4111-8111-111111111111')$$,'patient with active write access can add own-profile document metadata');
+select extensions.lives_ok($$insert into public.medical_documents(id,patient_id,storage_path,document_type,display_name,uploaded_by) values('abababab-abab-4bab-8bab-abababababab','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/general/fictional.pdf','other','Fictional authorized document','11111111-1111-4111-8111-111111111111')$$,'patient with active write access can add own-profile document metadata');
 select extensions.throws_ok($$insert into public.medical_documents(patient_id,storage_path,document_type,display_name,uploaded_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/general/fictional.pdf','other','Fictional unauthorized document','11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add document metadata to another patient profile');
+select extensions.lives_ok($$insert into public.extracted_document_data(id,patient_id,document_id,extracted_fields,review_status,visibility) values('bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','abababab-abab-4bab-8bab-abababababab','{"rawText":"Fictional OCR text"}'::jsonb,'pending','general')$$,'patient with active write access can save unverified OCR text for own document');
+select extensions.is((select count(*) from public.extracted_document_data where id='bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc' and review_status='pending'),1::bigint,'patient can read pending OCR text through profile RLS');
+select extensions.lives_ok($$update public.extracted_document_data set review_status='accepted',reviewed_by='11111111-1111-4111-8111-111111111111',reviewed_at=now() where id='bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc'$$,'patient can mark OCR text as reviewed without changing the source document verification status');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.throws_ok($$insert into public.extracted_document_data(patient_id,document_id,extracted_fields,visibility) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','abababab-abab-4bab-8bab-abababababab','{"rawText":"Unauthorized fictional text"}'::jsonb,'general')$$,'42501',null,'read-only linked guardian cannot add OCR text to a profile');
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select extensions.lives_ok($$update public.medication_records set status='historical' where id='cccccccc-cccc-4ccc-8ccc-cccccccccccc'$$,'patient with active write access can update own medicine-note status');
 with changed as (update public.medication_records set status='historical' where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' returning id)
 select extensions.is((select count(*) from changed),0::bigint,'patient cannot update another patient medicine-note status');
