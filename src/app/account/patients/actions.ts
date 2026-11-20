@@ -290,6 +290,8 @@ const vaccinationSchema = z.object({
   doseLabel: z.string().trim().max(60).optional().default(""),
   status: z.enum(["planned", "administered", "cancelled"]),
   dueOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid due date."),
+  reminderEnabled: z.enum(["on", "off"]).default("off"),
+  dueTimezone: z.string().trim().min(1).max(64).default("UTC").refine((value) => { try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; } catch { return false; } }, "Choose a valid time zone."),
   administeredOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid administration date."),
   documentId: z.string().trim().optional().default("").refine((value) => !value || z.string().uuid().safeParse(value).success, "Choose a valid vaccination document."),
   notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
@@ -335,7 +337,7 @@ const structuredRecordUpdateSchema = z.discriminatedUnion("recordType", [
   }),
   structuredRecordBase.extend({ recordType: z.literal("urination"), urination_type: z.enum(["wet_diaper", "toilet", "other"]), count: z.coerce.number().int().min(1).max(100), volume_ml: nullableNumber(0.1, 5000, 1), notes: nullableText(500) }),
   structuredRecordBase.extend({ recordType: z.literal("sleep"), sleep_type: z.enum(["nap", "overnight", "other"]), notes: nullableText(500) }),
-  structuredRecordBase.extend({ recordType: z.literal("vaccination"), vaccine_name: z.string().trim().min(2).max(100), dose_label: nullableText(60), status: z.enum(["planned", "administered", "cancelled"]), due_on: dateOnly, administered_on: dateOnly, notes: nullableText(500) }).superRefine((value, context) => {
+  structuredRecordBase.extend({ recordType: z.literal("vaccination"), vaccine_name: z.string().trim().min(2).max(100), dose_label: nullableText(60), status: z.enum(["planned", "administered", "cancelled"]), due_on: dateOnly, administered_on: dateOnly, reminder_enabled: z.enum(["true", "false"]).default("false"), notes: nullableText(500) }).superRefine((value, context) => {
     if (value.status === "planned" && !value.due_on) context.addIssue({ code: "custom", path: ["due_on"], message: "Add a due date for a planned vaccination." });
     if ((value.status === "administered") !== Boolean(value.administered_on)) context.addIssue({ code: "custom", path: ["administered_on"], message: "An administered record needs an administered date, and other statuses must not have one." });
   }),
@@ -709,6 +711,8 @@ export async function createVaccinationRecord(patientId: string, _previous: Care
     doseLabel: formData.get("doseLabel") ?? "",
     status: formData.get("status"),
     dueOn: formData.get("dueOn") ?? "",
+    reminderEnabled: formData.get("reminderEnabled") === "on" ? "on" : "off",
+    dueTimezone: formData.get("dueTimezone") ?? "UTC",
     administeredOn: formData.get("administeredOn") ?? "",
     documentId: formData.get("documentId") ?? "",
     notes: formData.get("notes") ?? "",
@@ -734,6 +738,8 @@ export async function createVaccinationRecord(patientId: string, _previous: Care
     dose_label: parsed.data.doseLabel || null,
     status: parsed.data.status,
     due_on: parsed.data.dueOn || null,
+    reminder_enabled: parsed.data.status === "planned" && parsed.data.reminderEnabled === "on",
+    reminder_timezone: parsed.data.dueTimezone,
     administered_on: parsed.data.administeredOn || null,
     document_id: parsed.data.documentId || null,
     notes: parsed.data.notes || null,
@@ -806,7 +812,9 @@ async function getStructuredRecordEditor(patientId: string) {
 }
 
 export async function updateStructuredHealthRecord(_previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
-  const parsed = structuredRecordUpdateSchema.safeParse(Object.fromEntries(formData.entries()));
+  const values = Object.fromEntries(formData.entries());
+  if (values.recordType === "vaccination") values.reminder_enabled = formData.get("reminder_enabled") === "on" ? "true" : "false";
+  const parsed = structuredRecordUpdateSchema.safeParse(values);
   if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the record details and try again." };
   const edit = await getStructuredRecordEditor(parsed.data.patientId);
   if (!edit.ok) return { status: "error", message: edit.message };
@@ -855,7 +863,7 @@ export async function updateStructuredHealthRecord(_previous: CareLogFormState, 
       failed = Boolean(error || !data); break;
     }
     case "vaccination": {
-      const { error, data } = await edit.supabase.from("vaccination_records").update({ vaccine_name: parsed.data.vaccine_name, dose_label: parsed.data.dose_label, status: parsed.data.status, due_on: parsed.data.due_on || null, administered_on: parsed.data.administered_on || null, notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle();
+      const { error, data } = await edit.supabase.from("vaccination_records").update({ vaccine_name: parsed.data.vaccine_name, dose_label: parsed.data.dose_label, status: parsed.data.status, due_on: parsed.data.due_on || null, administered_on: parsed.data.administered_on || null, reminder_enabled: parsed.data.reminder_enabled === "true", notes: parsed.data.notes }).eq("id", parsed.data.recordId).eq("patient_id", parsed.data.patientId).eq("created_by", edit.user.id).eq("verification_status", "unverified").select("id").maybeSingle();
       failed = Boolean(error || !data); break;
     }
     case "developmental": {

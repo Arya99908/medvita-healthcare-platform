@@ -64,4 +64,15 @@ describe("notification actions", () => {
       updated_at: expect.any(String),
     }, { onConflict: "user_id,category,channel" });
   });
+
+  it("accepts the vaccination date reminder preference", async () => {
+    const query = { upsert: vi.fn().mockResolvedValue({ error: null }) };
+    supabase.auth.getUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
+    supabase.from.mockReturnValue(query);
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+
+    await updateNotificationPreference(form({ category: "vaccination_reminder", enabled: "false" }));
+
+    expect(query.upsert).toHaveBeenCalledWith(expect.objectContaining({ user_id: userId, category: "vaccination_reminder", channel: "in_app", enabled: false }), { onConflict: "user_id,category,channel" });
+  });
 });

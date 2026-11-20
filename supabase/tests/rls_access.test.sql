@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(220);
+select extensions.plan(223);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -196,7 +196,11 @@ select extensions.throws_ok($$insert into public.appointments(patient_id,event_t
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
 select extensions.lives_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','temperature',38.2,'°C','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can record a child temperature');
 select extensions.throws_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','blood_pressure_systolic',110,'mmHg','caregiver','33333333-3333-4333-8333-333333333333')$$,'42501',null,'child vitals are limited to temperature readings');
-select extensions.lives_ok($$insert into public.vaccination_records(patient_id,vaccine_name,dose_label,status,due_on,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Fictional sample vaccine','Dose 1','planned','2026-12-15','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can add a child vaccination date');
+select extensions.lives_ok($$insert into public.vaccination_records(patient_id,vaccine_name,dose_label,status,due_on,reminder_enabled,reminder_timezone,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Fictional sample vaccine','Dose 1','planned','2026-12-15',true,'Asia/Kolkata','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can add a child vaccination date and opt in to its reminder');
+select extensions.is((select count(*) from public.notifications where user_id='33333333-3333-4333-8333-333333333333' and category='vaccination_reminder' and delivery_status='queued'),1::bigint,'opted-in caregiver date creates a private scheduled in-app reminder');
+select extensions.is((select title || ' ' || message from public.notifications where user_id='33333333-3333-4333-8333-333333333333' and category='vaccination_reminder'),'Vaccination date reminder A vaccination date you entered is coming up. Check the child profile for details.','vaccination reminder text does not expose vaccine name or dose details');
+update public.vaccination_records set reminder_enabled=false where vaccine_name='Fictional sample vaccine';
+select extensions.is((select delivery_status from public.notifications where user_id='33333333-3333-4333-8333-333333333333' and category='vaccination_reminder'),'cancelled','turning off the record reminder cancels its queued notification');
 select extensions.lives_ok($$insert into public.developmental_milestones(patient_id,milestone_name,domain,status,recorded_on,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Fictional sample observation','motor','observed','2026-11-20','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can record a child milestone observation');
 select extensions.throws_ok($$insert into public.developmental_milestones(patient_id,milestone_name,domain,status,recorded_on,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional sample observation','motor','observed','2026-11-20','caregiver','33333333-3333-4333-8333-333333333333')$$,'42501',null,'milestone observations cannot be added to adult profiles');
 select extensions.throws_ok($$insert into public.developmental_milestones(patient_id,milestone_name,domain,status,recorded_on,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Fictional follow-up','communication','follow_up','2026-11-20','caregiver','33333333-3333-4333-8333-333333333333')$$,'23514',null,'a planned milestone follow-up requires a follow-up date');

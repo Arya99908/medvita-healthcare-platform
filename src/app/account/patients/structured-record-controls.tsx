@@ -5,7 +5,7 @@ import { Pencil, Trash2 } from "lucide-react";
 import { deleteStructuredHealthRecord, updateStructuredHealthRecord, type CareLogFormState } from "./actions";
 
 type RecordType = "symptom" | "medical_condition" | "vital" | "feeding" | "bowel" | "vomiting" | "growth" | "urination" | "sleep" | "vaccination" | "developmental" | "menstrual";
-type Field = { name: string; label: string; type?: "text" | "number" | "date" | "textarea" | "select"; min?: number; max?: number; step?: number; required?: boolean; options?: Array<{ value: string; label: string }> };
+type Field = { name: string; label: string; type?: "text" | "number" | "date" | "textarea" | "select" | "checkbox"; min?: number; max?: number; step?: number; required?: boolean; options?: Array<{ value: string; label: string }> };
 
 const fieldsByType: Record<RecordType, Field[]> = {
   symptom: [
@@ -56,6 +56,7 @@ const fieldsByType: Record<RecordType, Field[]> = {
     { name: "status", label: "Record status", type: "select", options: [{ value: "planned", label: "Planned" }, { value: "administered", label: "Administered" }, { value: "cancelled", label: "Cancelled" }] },
     { name: "due_on", label: "Planned or next due date", type: "date" },
     { name: "administered_on", label: "Administered date · required when administered", type: "date" },
+    { name: "reminder_enabled", label: "Remind me at 9:00 AM local time on this date", type: "checkbox" },
     { name: "notes", label: "Notes", type: "textarea", max: 500 },
   ],
   developmental: [
@@ -80,7 +81,7 @@ export default function StructuredRecordControls({ patientId, recordId, recordTy
   patientId: string;
   recordId: string;
   recordType: RecordType;
-  values: Record<string, string | number | null>;
+  values: Record<string, string | number | boolean | null>;
 }) {
   const [updateState, updateAction, updating] = useActionState(updateStructuredHealthRecord, initialState);
   const [deleteState, deleteAction, deleting] = useActionState(deleteStructuredHealthRecord, initialState);
@@ -97,7 +98,8 @@ export default function StructuredRecordControls({ patientId, recordId, recordTy
           const id = `structured-${recordId}-${field.name}`;
           return <div className="structured-record-field" key={field.name}>
             <label htmlFor={id}>{field.label}</label>
-            {field.type === "textarea" ? <textarea id={id} name={field.name} defaultValue={String(value)} maxLength={field.max} rows={2} />
+            {field.type === "checkbox" ? <input id={id} name={field.name} type="checkbox" value="on" defaultChecked={value === true || value === "true"} />
+              : field.type === "textarea" ? <textarea id={id} name={field.name} defaultValue={String(value)} maxLength={field.max} rows={2} />
               : field.type === "select" ? <select id={id} name={field.name} defaultValue={String(value)} required={field.required}>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
                 : <input id={id} name={field.name} type={field.type ?? "text"} defaultValue={String(value)} maxLength={field.type === "text" ? field.max : undefined} min={field.min} max={field.type === "number" ? field.max : undefined} step={field.step} required={field.required ?? (!field.type || field.type === "number" && !["quantity_ml", "duration_minutes", "weight_kg", "height_cm", "head_circumference_cm", "volume_ml"].includes(field.name))} />}
           </div>;

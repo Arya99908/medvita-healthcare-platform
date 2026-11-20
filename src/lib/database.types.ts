@@ -2180,6 +2180,8 @@ export type Database = {
           id: string
           notes: string | null
           patient_id: string
+          reminder_enabled: boolean
+          reminder_timezone: string
           source: string
           status: string
           vaccine_name: string
@@ -2195,6 +2197,8 @@ export type Database = {
           id?: string
           notes?: string | null
           patient_id: string
+          reminder_enabled?: boolean
+          reminder_timezone?: string
           source?: string
           status?: string
           vaccine_name: string
@@ -2210,6 +2214,8 @@ export type Database = {
           id?: string
           notes?: string | null
           patient_id?: string
+          reminder_enabled?: boolean
+          reminder_timezone?: string
           source?: string
           status?: string
           vaccine_name?: string

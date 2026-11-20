@@ -71,16 +71,18 @@ export default function ChildCareForms({ patientId, vaccinationDocuments = [] }:
     <CareLogForm patientId={patientId} kind="urination" />
     <CareLogForm patientId={patientId} kind="sleep" />
     <details className="account-card account-entry-disclosure">
-      <summary className="account-card-heading"><div><span className="micro-label">VACCINATION RECORD</span><h2>Track a vaccination</h2><p>Dates are caregiver-entered; MedVita does not generate a vaccine schedule or send reminders.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></summary>
-      <form ref={vaccinationFormRef} action={vaccinationAction} className="account-profile-form timeline-form">
+      <summary className="account-card-heading"><div><span className="micro-label">VACCINATION RECORD</span><h2>Track a vaccination</h2><p>Dates are caregiver-entered; MedVita does not generate a vaccine schedule.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></summary>
+      <form ref={vaccinationFormRef} action={vaccinationAction} className="account-profile-form timeline-form" onSubmit={(event) => { const timezone = event.currentTarget.elements.namedItem("dueTimezone"); if (timezone instanceof HTMLInputElement) timezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; }}>
         <label htmlFor="vaccine-name">Vaccine name</label><input id="vaccine-name" name="vaccineName" minLength={2} maxLength={100} required />
         <label htmlFor="vaccine-dose">Dose or series label <span>(optional)</span></label><input id="vaccine-dose" name="doseLabel" maxLength={60} placeholder="For example, dose 1" />
         <label htmlFor="vaccine-status">Record status</label><select id="vaccine-status" name="status" defaultValue="planned"><option value="planned">Planned</option><option value="administered">Administered</option><option value="cancelled">Cancelled</option></select>
         <label htmlFor="vaccine-due">Planned or next due date <span>(required when planned)</span></label><input id="vaccine-due" name="dueOn" type="date" />
+        <input type="hidden" name="dueTimezone" defaultValue="UTC" />
+        <label className="checkbox-field"><input type="checkbox" name="reminderEnabled" value="on" /> Remind me in MedVita on this date at 9:00 AM</label>
         <label htmlFor="vaccine-administered">Administered date <span>(required when administered)</span></label><input id="vaccine-administered" name="administeredOn" type="date" />
         <label htmlFor="vaccine-document">Vaccination document <span>(optional)</span></label><select id="vaccine-document" name="documentId" defaultValue=""><option value="">No document selected</option>{vaccinationDocuments.map((document) => <option key={document.id} value={document.id}>{document.display_name}</option>)}</select>
         <label htmlFor="vaccine-notes">Notes <span>(optional)</span></label><textarea id="vaccine-notes" name="notes" maxLength={500} rows={2} />
-        <p className="timeline-privacy-note">Use the child&apos;s clinician or official local schedule to confirm due dates. This record is not a vaccination recommendation.</p>
+        <p className="timeline-privacy-note">Use the child&apos;s clinician or official local schedule to confirm due dates. This record is not a vaccination recommendation. Reminders use your device time zone and generic text.</p>
         {vaccinationState.message && <p className={`account-form-message ${vaccinationState.status}`} role="status">{vaccinationState.status === "success" && <Check size={15} />}{vaccinationState.message}</p>}
         <button className="primary-button account-submit" type="submit" disabled={vaccinationPending}><Plus size={16} />{vaccinationPending ? "Saving…" : "Save vaccination"}</button>
       </form>

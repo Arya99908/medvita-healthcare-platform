@@ -131,7 +131,7 @@ function sleepForm(values: Record<string, string> = {}) {
 
 function vaccinationForm(values: Record<string, string> = {}) {
   const form = new FormData();
-  for (const [key, value] of Object.entries({ vaccineName: "Fictional sample vaccine", doseLabel: "Dose 1", status: "planned", dueOn: "2026-12-15", administeredOn: "", documentId: "", notes: "Fictional reminder", ...values })) form.set(key, value);
+  for (const [key, value] of Object.entries({ vaccineName: "Fictional sample vaccine", doseLabel: "Dose 1", status: "planned", dueOn: "2026-12-15", reminderEnabled: "off", dueTimezone: "Asia/Kolkata", administeredOn: "", documentId: "", notes: "Fictional reminder", ...values })) form.set(key, value);
   return form;
 }
 
@@ -686,7 +686,16 @@ describe("child vaccination server action", () => {
       : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
     const result = await createVaccinationRecord(patientId, { status: "idle", message: "" }, vaccinationForm());
     expect(result.status).toBe("success");
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, vaccine_name: "Fictional sample vaccine", status: "planned", due_on: "2026-12-15", administered_on: null, document_id: null, source: "caregiver", verification_status: "unverified", created_by: "user-1" }));
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, vaccine_name: "Fictional sample vaccine", status: "planned", due_on: "2026-12-15", reminder_enabled: false, reminder_timezone: "Asia/Kolkata", administered_on: null, document_id: null, source: "caregiver", verification_status: "unverified", created_by: "user-1" }));
+  });
+
+  it("opts in only when the caregiver asks for a date reminder", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    await createVaccinationRecord(patientId, { status: "idle", message: "" }, vaccinationForm({ reminderEnabled: "on" }));
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ reminder_enabled: true, reminder_timezone: "Asia/Kolkata" }));
   });
 
   it("requires an administration date before marking a dose administered", async () => {
