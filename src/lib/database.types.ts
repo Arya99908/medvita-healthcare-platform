@@ -1564,6 +1564,56 @@ export type Database = {
           },
         ]
       }
+      patient_invitations: {
+        Row: {
+          accepted_at: string | null
+          can_write: boolean
+          created_at: string
+          expires_at: string
+          id: string
+          invited_by: string
+          invited_email: string
+          patient_id: string
+          relationship_role: string
+          revoked_at: string | null
+          token_hash: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          can_write?: boolean
+          created_at?: string
+          expires_at: string
+          id?: string
+          invited_by: string
+          invited_email: string
+          patient_id: string
+          relationship_role: string
+          revoked_at?: string | null
+          token_hash: string
+        }
+        Update: {
+          accepted_at?: string | null
+          can_write?: boolean
+          created_at?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string
+          invited_email?: string
+          patient_id?: string
+          relationship_role?: string
+          revoked_at?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_invitations_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_profiles: {
         Row: {
           archived_at: string | null
@@ -2152,6 +2202,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_patient_invitation: {
+        Args: { p_invitation_token: string }
+        Returns: string
+      }
+      create_patient_invitation: {
+        Args: { p_can_write?: boolean; p_invited_email: string; p_patient_id: string; p_relationship_role: string }
+        Returns: { invitation_expires_at: string; invitation_id: string; invitation_token: string }[]
+      }
       create_patient_profile: {
         Args: {
           p_date_of_birth?: string
@@ -2163,6 +2221,10 @@ export type Database = {
         Returns: string
       }
       export_my_data: { Args: never; Returns: Json }
+      revoke_patient_invitation: {
+        Args: { p_invitation_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

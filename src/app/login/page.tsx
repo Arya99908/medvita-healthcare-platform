@@ -26,15 +26,17 @@ export default function LoginPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setMessage("");
     if (!configured) { setMessage("Sign-in is unavailable until a Supabase project is configured."); return; }
+    const requestedPath = new URLSearchParams(window.location.search).get("next");
+    const nextPath = requestedPath?.startsWith("/") && !requestedPath.startsWith("//") && !requestedPath.includes("\\") ? requestedPath : "/account";
     setBusy(true);
     try {
       const supabase = createClient();
       const result = mode === "signin"
         ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/account` } });
+        : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}` } });
       if (result.error) setMessage(result.error.message);
       else if (mode === "signup" && !result.data.session) setMessage("Check your email to confirm the account before signing in.");
-      else { router.push("/account"); router.refresh(); }
+      else { router.push(nextPath); router.refresh(); }
     } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to complete sign-in."); }
     finally { setBusy(false); }
   }

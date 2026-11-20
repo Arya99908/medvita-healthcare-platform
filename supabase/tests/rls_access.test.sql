@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(90);
+select extensions.plan(99);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -12,7 +12,8 @@ values
   ('22222222-2222-4222-8222-222222222222','authenticated','authenticated','medvita-rls-patient-b@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
   ('33333333-3333-4333-8333-333333333333','authenticated','authenticated','medvita-rls-guardian@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
   ('44444444-4444-4444-8444-444444444444','authenticated','authenticated','medvita-rls-doctor@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
-  ('55555555-5555-4555-8555-555555555555','authenticated','authenticated','medvita-rls-requester@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now());
+  ('55555555-5555-4555-8555-555555555555','authenticated','authenticated','medvita-rls-requester@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
+  ('66666666-6666-4666-8666-666666666666','authenticated','authenticated','medvita-invitee@example.invalid','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now());
 
 insert into public.patient_profiles(id,created_by,display_name,life_stage)
 values
@@ -151,6 +152,25 @@ select extensions.lives_ok($$insert into public.emergency_alerts(patient_id,aler
 select extensions.lives_ok($$insert into public.caregiver_handover_records(patient_id,from_user_id,to_user_id,handover_text,visibility) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333','Fictional handover summary','general')$$,'writer can hand over to an active linked reader');
 select extensions.throws_ok($$insert into public.caregiver_handover_records(patient_id,from_user_id,to_user_id,handover_text,visibility) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','33333333-3333-4333-8333-333333333333','Fictional forged handover','general')$$,'42501',null,'writer cannot forge the handover author');
 select extensions.throws_ok($$insert into public.caregiver_handover_records(patient_id,from_user_id,to_user_id,handover_text,visibility) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','22222222-2222-4222-8222-222222222222','55555555-5555-4555-8555-555555555555','Fictional unlinked handover','general')$$,'42501',null,'writer cannot target an unlinked handover recipient');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.throws_ok($$select * from public.create_patient_invitation('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','medvita-invitee@example.invalid','caregiver',false)$$,'42501',null,'linked caregiver cannot invite additional users to another profile');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select set_config('medvita.invitation_token',(select invitation_token from public.create_patient_invitation('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','medvita-invitee@example.invalid','caregiver',false)),true);
+select extensions.is((select count(*) from public.patient_invitations where invited_email='medvita-invitee@example.invalid' and token_hash<>current_setting('medvita.invitation_token')),1::bigint,'invitation token is stored only as a hash');
+select set_config('medvita.invitation_export',public.export_my_data()::text,true);
+select extensions.is(jsonb_array_length(current_setting('medvita.invitation_export')::jsonb #> '{tables,patient_invitations}'),1,'account export includes the caller-visible invitation');
+select extensions.is(coalesce(((current_setting('medvita.invitation_export')::jsonb #> '{tables,patient_invitations,0}') ? 'token_hash'),false),false,'account export omits invitation token hashes');
+select set_config('request.jwt.claim.sub','66666666-6666-4666-8666-666666666666',true);
+select extensions.lives_ok($$select public.accept_patient_invitation(current_setting('medvita.invitation_token'))$$,'email-matched invitee can accept the invitation');
+select extensions.is((select count(*) from public.patient_relationships where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='66666666-6666-4666-8666-666666666666' and relationship_role='caregiver' and status='active' and can_read and not can_write),1::bigint,'read-only invitation creates only read access');
+select extensions.throws_ok($$select public.accept_patient_invitation(current_setting('medvita.invitation_token'))$$,'22023',null,'accepted invitation token cannot be reused');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select set_config('medvita.wrong_email_token',(select invitation_token from public.create_patient_invitation('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','medvita-rls-requester@example.invalid','family_member',false)),true);
+select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444',true);
+select extensions.throws_ok($$select public.accept_patient_invitation(current_setting('medvita.wrong_email_token'))$$,'42501',null,'invitation cannot be accepted by a different email account');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select set_config('medvita.revoked_invitation',(select invitation_id::text from public.create_patient_invitation('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','medvita-rls-doctor@example.invalid','family_member',false)),true);
+select extensions.is(public.revoke_patient_invitation(current_setting('medvita.revoked_invitation')::uuid),true,'inviter can revoke an unused caregiver invitation');
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select extensions.throws_ok($$insert into public.emergency_contacts(patient_id,display_name,phone,priority,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional unauthorized contact','+91 98765 43210',1,'11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot add an emergency contact to another profile');
 select extensions.throws_ok($$insert into public.emergency_alerts(patient_id,alert_type,status,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','sos_call_requested','created','11111111-1111-4111-8111-111111111111')$$,'42501',null,'patient cannot record an emergency action for another profile');
