@@ -1,5 +1,5 @@
-import MedVitaDashboard from "@/components/medvita-dashboard";
+import Medvita from "@/components/demo/medvita";
 
 export default function HomePage() {
-  return <MedVitaDashboard />;
+  return <Medvita />;
 }

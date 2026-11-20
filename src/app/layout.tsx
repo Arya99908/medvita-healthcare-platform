@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./medvita-demo.css";
 import { DisplayPreferencesControl, DisplayPreferencesProvider } from "@/components/display-preferences";
 
 export const metadata: Metadata = {
-  title: "MedVita — Your Health. Your Life.",
-  description:
-    "A simple, life-stage-aware healthcare companion. Explore MedVita with fictional demonstration profiles.",
+  title: "MEDVITA · Your connected care companion",
+  description: "A fictional, frontend-only healthcare demonstration. Your Health. Your Life. One Connected Ecosystem.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
