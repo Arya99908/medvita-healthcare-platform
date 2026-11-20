@@ -8,6 +8,7 @@ import AppointmentForm from "../appointment-form";
 import AppointmentStatusForm from "../appointment-status-form";
 import MedicationForm from "../medication-form";
 import MedicationEditForm from "../medication-edit-form";
+import MedicationDeleteForm from "../medication-delete-form";
 import MedicationStatusForm from "../medication-status-form";
 import { MedicationAdministrationForm, MedicationScheduleForm } from "../medication-schedule-form";
 import PatientEmergencyPanel from "../patient-emergency-panel";
@@ -221,7 +222,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
             {canWrite && medication.status === "active" && <MedicationScheduleForm patientId={patientId} medicationId={medication.id} />}
             {logs.length > 0 && <div className="medication-record-subsection"><h4>Recent dose events</h4>{logs.map((log) => <div className="medication-log-row" key={log.id}><span className="timeline-event-type">{log.status} · {log.recorded_by === user.id ? "you" : "linked user"}</span><LocalDateTime value={log.administered_at} />{log.notes && <p>{log.notes}</p>}</div>)}</div>}
             {canWrite && <MedicationAdministrationForm patientId={patientId} medicationId={medication.id} schedules={schedules.map(({ id, frequency, status }) => ({ id, frequency, status }))} />}
-            {canWrite && medication.created_by === user.id && <><MedicationEditForm patientId={patientId} medication={medication} /><MedicationStatusForm patientId={patientId} medicationId={medication.id} status={medication.status} /></>}</article>; })}</div>
+            {canWrite && medication.created_by === user.id && <><MedicationEditForm patientId={patientId} medication={medication} /><MedicationStatusForm patientId={patientId} medicationId={medication.id} status={medication.status} /><MedicationDeleteForm patientId={patientId} medicationId={medication.id} status={medication.status} /></>}</article>; })}</div>
             : <div className="account-empty-state"><Pill size={22} /><strong>No medicine notes saved</strong><span>Add a self-reported note if this profile&apos;s active access allows writing.</span></div>}
       </section>}
       {canRead && <section className="account-card" aria-labelledby="appointments-title"><div className="account-card-heading"><div><span className="micro-label">CARE CALENDAR</span><h2 id="appointments-title">Appointments</h2><p>Saved plans are not sent to clinics or external calendars. Marking one canceled only changes this list.</p></div><span className="account-card-icon"><CalendarDays size={18} /></span></div>

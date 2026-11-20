@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(157);
+select extensions.plan(163);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -55,6 +55,15 @@ values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-11-03','2026-11-07','Fiction
 
 insert into public.medication_records(id,patient_id,medicine_name,status,created_by)
 values('dddddddd-dddd-4ddd-8ddd-dddddddddddd','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional patient B medicine','active','22222222-2222-4222-8222-222222222222');
+insert into public.medication_records(id,patient_id,medicine_name,status,created_by)
+values
+  ('a0a0a0a0-a0a0-40a0-80a0-a0a0a0a0a0a0','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional removable medicine note','discontinued','22222222-2222-4222-8222-222222222222'),
+  ('a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional medicine with schedule','historical','22222222-2222-4222-8222-222222222222'),
+  ('a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional medicine with dose log','discontinued','22222222-2222-4222-8222-222222222222');
+insert into public.medication_schedules(id,patient_id,medication_id,frequency,status,created_by)
+values('a3a3a3a3-a3a3-43a3-83a3-a3a3a3a3a3a3','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1','Fictional schedule','complete','22222222-2222-4222-8222-222222222222');
+insert into public.medication_administration_logs(id,patient_id,medication_id,status,recorded_by,visibility)
+values('a4a4a4a4-a4a4-44a4-84a4-a4a4a4a4a4a4','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2','uncertain','22222222-2222-4222-8222-222222222222','general');
 
 insert into public.appointments(id,patient_id,title,starts_at,status,created_by)
 values('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional patient B appointment','2026-11-22 03:30:00+00','scheduled','22222222-2222-4222-8222-222222222222');
@@ -233,6 +242,8 @@ select extensions.is((select verification_status from public.medical_documents w
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
 select extensions.throws_ok($$insert into public.extracted_document_data(patient_id,document_id,extracted_fields,visibility) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','abababab-abab-4bab-8bab-abababababab','{"rawText":"Unauthorized fictional text"}'::jsonb,'general')$$,'42501',null,'read-only linked guardian cannot add OCR text to a profile');
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+with removed as (delete from public.medication_records where id='cccccccc-cccc-4ccc-8ccc-cccccccccccc' returning id)
+select extensions.is((select count(*) from removed),0::bigint,'active medicine note cannot be removed');
 select extensions.lives_ok($$update public.medication_records set status='historical' where id='cccccccc-cccc-4ccc-8ccc-cccccccccccc'$$,'patient with active write access can update own medicine-note status');
 with changed as (update public.medication_records set status='historical' where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' returning id)
 select extensions.is((select count(*) from changed),0::bigint,'patient cannot update another patient medicine-note status');
@@ -242,6 +253,8 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
 with changed as (update public.medication_records set medicine_name='Fictional edited by another caregiver' where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' returning id)
 select extensions.is((select count(*) from changed),0::bigint,'linked caregiver cannot edit another users medicine note');
+with removed as (delete from public.medication_records where id='dddddddd-dddd-4ddd-8ddd-dddddddddddd' returning id)
+select extensions.is((select count(*) from removed),0::bigint,'linked caregiver cannot remove another authors medicine note');
 with changed as (update public.health_events set title='Unauthorized fictional change' where id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd' returning id)
 select extensions.is((select count(*) from changed),0::bigint,'linked writer cannot edit another users unverified timeline note');
 with removed as (delete from public.health_events where id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd' returning id)
@@ -253,6 +266,10 @@ select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222'
 select extensions.lives_ok($$update public.health_events set title='Fictional corrected own note' where id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd'$$,'author can edit their own unverified timeline note');
 select extensions.lives_ok($$delete from public.health_events where id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd'$$,'author can remove their own unverified timeline note');
 select extensions.is((select count(*) from public.patient_activity_events where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and resource_type='health_events' and resource_id='cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd' and action='record_removed' and actor_user_id='22222222-2222-4222-8222-222222222222'),1::bigint,'timeline removal remains in the privacy-filtered activity history');
+select extensions.lives_ok($$delete from public.medication_records where id='a0a0a0a0-a0a0-40a0-80a0-a0a0a0a0a0a0'$$,'author can remove their discontinued medicine note without linked history');
+select extensions.throws_ok($$delete from public.medication_records where id='a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1'$$,'23503',null,'medicine note with a schedule cannot be removed');
+select extensions.throws_ok($$delete from public.medication_records where id='a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2'$$,'23503',null,'medicine note with dose history cannot be removed');
+select extensions.is((select count(*) from public.patient_activity_events where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and resource_type='medication_records' and resource_id='a0a0a0a0-a0a0-40a0-80a0-a0a0a0a0a0a0' and action='record_removed' and actor_user_id='22222222-2222-4222-8222-222222222222'),1::bigint,'medicine-note removal remains in the privacy-filtered activity history');
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 

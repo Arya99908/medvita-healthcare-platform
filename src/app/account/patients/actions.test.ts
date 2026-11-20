@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, logMedicationAdministration, recordEmergencyAlert, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, logMedicationAdministration, recordEmergencyAlert, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -34,7 +34,7 @@ function updateQuery(result: unknown) {
 }
 
 function deleteQuery(result: unknown) {
-  const chain = { delete: vi.fn(() => chain), eq: vi.fn(() => chain), select: vi.fn(() => chain), maybeSingle: vi.fn().mockResolvedValue(result) };
+  const chain = { delete: vi.fn(() => chain), eq: vi.fn(() => chain), in: vi.fn(() => chain), select: vi.fn(() => chain), maybeSingle: vi.fn().mockResolvedValue(result) };
   return chain;
 }
 
@@ -995,6 +995,64 @@ describe("medication status server action", () => {
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/person who entered/i);
     expect(mockSupabase.from).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("medicine note removal action", () => {
+  const medicationId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const initialState = { status: "idle" as const, message: "" };
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  function removalForm() {
+    const form = new FormData();
+    form.set("confirmRemove", "remove");
+    return form;
+  }
+
+  it("removes an author's discontinued note and restricts the row to removable statuses", async () => {
+    const remove = deleteQuery({ data: { id: medicationId }, error: null });
+    let medicationReads = 0;
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : (medicationReads++ === 0 ? query({ data: { id: medicationId, created_by: "user-1", status: "discontinued" }, error: null }) : remove));
+    const result = await deleteMedicationNote(patientId, medicationId, initialState, removalForm());
+    expect(result.status).toBe("success");
+    expect(remove.eq).toHaveBeenCalledWith("created_by", "user-1");
+    expect(remove.in).toHaveBeenCalledWith("status", ["discontinued", "historical"]);
+    expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}/reports`);
+  });
+
+  it("keeps active notes and reports when linked schedule or dose history blocks removal", async () => {
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : query({ data: { id: medicationId, created_by: "user-1", status: "active" }, error: null }));
+    const activeResult = await deleteMedicationNote(patientId, medicationId, initialState, removalForm());
+    expect(activeResult.status).toBe("error");
+    expect(activeResult.message).toMatch(/discontinued or historical/i);
+
+    const remove = deleteQuery({ data: null, error: { code: "23503" } });
+    let medicationReads = 0;
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : (medicationReads++ === 0 ? query({ data: { id: medicationId, created_by: "user-1", status: "historical" }, error: null }) : remove));
+    const linkedResult = await deleteMedicationNote(patientId, medicationId, initialState, removalForm());
+    expect(linkedResult.status).toBe("error");
+    expect(linkedResult.message).toMatch(/linked schedule or dose history/i);
+  });
+
+  it("does not let another linked user remove the author's note", async () => {
+    const remove = deleteQuery({ data: { id: medicationId }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : query({ data: { id: medicationId, created_by: "different-user", status: "historical" }, error: null }));
+    const result = await deleteMedicationNote(patientId, medicationId, initialState, removalForm());
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/person who entered/i);
+    expect(remove.delete).not.toHaveBeenCalled();
   });
 });
 

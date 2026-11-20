@@ -108,6 +108,7 @@ const medicationStatusSchema = z.object({
   medicationId: z.string().uuid("Choose a valid medicine note."),
   status: z.enum(["active", "paused", "discontinued", "historical"]),
 });
+const deleteMedicationSchema = z.object({ patientId: z.string().uuid(), medicationId: z.string().uuid() });
 
 const medicationScheduleSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
@@ -986,6 +987,39 @@ export async function updateMedicationStatus(patientId: string, _previous: Medic
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   const statusMessage = parsed.data.status === "active" ? "Medicine note listed as current." : parsed.data.status === "historical" ? "Medicine note moved to history." : parsed.data.status === "discontinued" ? "Medicine note marked discontinued." : "Medicine note paused.";
   return { status: "success", message: statusMessage };
+}
+
+export async function deleteMedicationNote(patientId: string, medicationId: string, _previous: MedicationFormState, formData: FormData): Promise<MedicationFormState> {
+  void _previous;
+  const parsed = deleteMedicationSchema.safeParse({ patientId, medicationId });
+  if (!parsed.success) return { status: "error", message: "Choose a valid medicine note." };
+  if (formData.get("confirmRemove") !== "remove") return { status: "error", message: "Confirm that you want to remove this medicine note." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before removing this medicine note." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships")
+    .select("status,can_read,can_write").eq("patient_id", parsed.data.patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) {
+    return { status: "error", message: "You do not have active write access to this profile." };
+  }
+  const { data: medication, error: medicationError } = await supabase.from("medication_records")
+    .select("id,created_by,status").eq("id", parsed.data.medicationId).eq("patient_id", parsed.data.patientId).maybeSingle();
+  if (medicationError || !medication || medication.created_by !== user.id) {
+    return { status: "error", message: "Only the person who entered this medicine note can remove it." };
+  }
+  if (medication.status !== "discontinued" && medication.status !== "historical") {
+    return { status: "error", message: "Mark this note discontinued or historical before removing it." };
+  }
+  const { data, error } = await supabase.from("medication_records").delete()
+    .eq("id", parsed.data.medicationId).eq("patient_id", parsed.data.patientId).eq("created_by", user.id)
+    .in("status", ["discontinued", "historical"]).select("id").maybeSingle();
+  if (error?.code === "23503") {
+    return { status: "error", message: "This note has a linked schedule or dose history, so it cannot be removed. Keep it in the medicine history instead." };
+  }
+  if (error || !data) return { status: "error", message: "This medicine note could not be removed. Check your access and try again." };
+  revalidatePath(`/account/patients/${parsed.data.patientId}`);
+  revalidatePath(`/account/patients/${parsed.data.patientId}/reports`);
+  return { status: "success", message: "Medicine note removed. Notes with linked schedules or dose history are kept." };
 }
 
 export async function updateAppointmentStatus(patientId: string, _previous: AppointmentStatusFormState, formData: FormData): Promise<AppointmentStatusFormState> {
