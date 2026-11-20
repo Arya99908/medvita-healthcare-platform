@@ -16,21 +16,15 @@ function form(values: Record<string, string>) {
   return data;
 }
 
-function profileLookup(result: { data: unknown; error: null | { message: string } }) {
-  const query = {
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue(result),
-  };
-  supabase.from.mockReturnValue(query);
-  return query;
-}
+const application = () => form({
+  displayName: "  Dr Example  ", specialty: "Family medicine", organisation: "Clinic",
+  registrationNumber: "KA-12345", issuingJurisdiction: "Karnataka Medical Council",
+});
 
 describe("doctor profile action", () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("rejects invalid profile data before creating a client", async () => {
+  it("requires professional registration details before creating a client", async () => {
     const result = await saveDoctorProfile(initialState, form({ displayName: "D", specialty: "", organisation: "" }));
     expect(result.status).toBe("error");
     expect(createClient).not.toHaveBeenCalled();
@@ -39,33 +33,46 @@ describe("doctor profile action", () => {
   it("requires an authenticated user", async () => {
     vi.mocked(createClient).mockResolvedValue(supabase as never);
     supabase.auth.getUser.mockResolvedValue({ data: { user: null }, error: null });
-    const result = await saveDoctorProfile(initialState, form({ displayName: "Dr Example", specialty: "Family medicine", organisation: "Clinic" }));
+    const result = await saveDoctorProfile(initialState, application());
     expect(result.status).toBe("error");
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
-  it("creates a new profile as unverified for the signed-in account", async () => {
+  it("submits registration details for manual review", async () => {
     supabase.auth.getUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
     vi.mocked(createClient).mockResolvedValue(supabase as never);
-    profileLookup({ data: null, error: null });
-    const insert = vi.fn().mockResolvedValue({ error: null });
-    supabase.from.mockImplementationOnce(() => ({
-      select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-    })).mockImplementationOnce(() => ({ insert }));
+    const insertDoctor = vi.fn().mockResolvedValue({ error: null });
+    const selectDoctorId = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: { id: "doctor-id" }, error: null }) };
+    const upsertSubmission = vi.fn().mockResolvedValue({ error: null });
+    const updateDoctor = { update: vi.fn(), eq: vi.fn() };
+    updateDoctor.update.mockReturnValue(updateDoctor);
+    updateDoctor.eq.mockReturnValueOnce(updateDoctor).mockResolvedValue({ error: null });
+    let doctorCall = 0;
+    supabase.from.mockImplementation((table: string) => {
+      if (table === "doctors") {
+        doctorCall += 1;
+        if (doctorCall === 1) return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }) };
+        if (doctorCall === 2) return { insert: insertDoctor };
+        return doctorCall === 3 ? selectDoctorId : updateDoctor;
+      }
+      if (table === "doctor_verification_submissions") return { upsert: upsertSubmission };
+      return updateDoctor;
+    });
 
-    const result = await saveDoctorProfile(initialState, form({ displayName: "  Dr Example  ", specialty: "Family medicine", organisation: "Clinic" }));
+    const result = await saveDoctorProfile(initialState, application());
 
     expect(result.status).toBe("success");
-    expect(insert).toHaveBeenCalledWith({ user_id: userId, display_name: "Dr Example", specialty: "Family medicine", organisation: "Clinic", verification_status: "unverified" });
+    expect(insertDoctor).toHaveBeenCalledWith({ user_id: userId, display_name: "Dr Example", specialty: "Family medicine", organisation: "Clinic", verification_status: "unverified" });
+    expect(upsertSubmission).toHaveBeenCalledWith(expect.objectContaining({ doctor_id: "doctor-id", user_id: userId, registration_number: "KA-12345", issuing_jurisdiction: "Karnataka Medical Council" }), { onConflict: "doctor_id" });
     expect(revalidatePath).toHaveBeenCalledWith("/account/doctor");
   });
 
   it("does not let a doctor edit a verified profile", async () => {
     supabase.auth.getUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
     vi.mocked(createClient).mockResolvedValue(supabase as never);
-    profileLookup({ data: { id: "doctor-id", verification_status: "verified" }, error: null });
+    supabase.from.mockReturnValue({ select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: { id: "doctor-id", verification_status: "verified" }, error: null }) });
 
-    const result = await saveDoctorProfile(initialState, form({ displayName: "Dr Example", specialty: "", organisation: "" }));
+    const result = await saveDoctorProfile(initialState, application());
 
     expect(result.status).toBe("error");
     expect(supabase.from).toHaveBeenCalledTimes(1);

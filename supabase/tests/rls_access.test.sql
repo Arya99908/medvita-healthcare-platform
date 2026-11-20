@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(163);
+select extensions.plan(173);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -20,6 +20,10 @@ insert into public.doctors(user_id,display_name,verification_status)
 values
   ('44444444-4444-4444-8444-444444444444','Fictional verified doctor','verified'),
   ('77777777-7777-4777-8777-777777777777','Fictional unverified doctor','unverified');
+insert into public.user_roles(user_id,role,granted_by)
+values('66666666-6666-4666-8666-666666666666','platform_admin','11111111-1111-4111-8111-111111111111');
+insert into public.doctor_verification_submissions(doctor_id,user_id,registration_number,issuing_jurisdiction)
+select id,user_id,'FICT-KA-7788','Fictional Karnataka council' from public.doctors where user_id='77777777-7777-4777-8777-777777777777';
 
 insert into public.patient_profiles(id,created_by,display_name,life_stage)
 values
@@ -355,6 +359,23 @@ select extensions.lives_ok($$update public.patient_relationships set status='rev
 select extensions.ok((select revoked_at is not null from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='read'),'revoking doctor relationship also revokes patient read consent');
 select extensions.ok((select revoked_at is not null from public.access_permissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and user_id='44444444-4444-4444-8444-444444444444' and permission='clinical_notes'),'revoking doctor relationship also revokes clinical-note consent');
 select extensions.is(medvita_private.has_patient_access('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','read'),false,'doctor cannot read after revoking their relationship');
+
+reset role;
+update public.doctors set verification_status='pending' where user_id='77777777-7777-4777-8777-777777777777';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','77777777-7777-4777-8777-777777777777',true);
+select extensions.is((select count(*) from public.doctor_verification_submissions),1::bigint,'doctor can read their own private registration submission');
+select set_config('request.jwt.claim.sub','44444444-4444-4444-8444-444444444444',true);
+select extensions.is((select count(*) from public.doctor_verification_submissions),0::bigint,'another doctor cannot read private registration details');
+select extensions.is((select count(*) from public.doctors where verification_status='pending'),0::bigint,'ordinary clinician cannot see the administrative review queue');
+select extensions.throws_ok($$select public.review_doctor_application((select id from public.doctors where user_id='77777777-7777-4777-8777-777777777777'),'verified',null)$$,'42501',null,'ordinary clinician cannot review doctor applications');
+select set_config('request.jwt.claim.sub','66666666-6666-4666-8666-666666666666',true);
+select extensions.is((select count(*) from public.doctor_verification_submissions),1::bigint,'platform administrator can read private registration submission');
+select extensions.is((select count(*) from public.doctors where verification_status='pending'),1::bigint,'platform administrator can see pending doctor profile');
+select extensions.throws_ok($$select public.review_doctor_application((select id from public.doctors where user_id='77777777-7777-4777-8777-777777777777'),'rejected','   ')$$,'22023',null,'rejection requires a meaningful reason');
+select extensions.lives_ok($$select public.review_doctor_application((select id from public.doctors where user_id='77777777-7777-4777-8777-777777777777'),'verified',null)$$,'platform administrator can verify an application with submitted registration details');
+select extensions.is((select verification_status from public.doctors where user_id='77777777-7777-4777-8777-777777777777'),'verified','review decision updates the doctor verification status');
+select extensions.is((select count(*) from public.audit_logs where actor_user_id='66666666-6666-4666-8666-666666666666' and action='doctor_application_verified' and resource_type='doctor'),1::bigint,'doctor verification decision is recorded in the administrator audit log');
 
 reset role;
 -- Raise an error if any assertion fails so `supabase db query` returns non-zero.

@@ -12,15 +12,16 @@ export default async function AccountPage() {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) redirect("/login");
 
-  const [{ data: profiles, error: profilesError }, { data: relationships, error: relationshipsError }] = await Promise.all([
+  const [{ data: profiles, error: profilesError }, { data: relationships, error: relationshipsError }, { data: roles }] = await Promise.all([
     supabase.from("patient_profiles").select("id,display_name,date_of_birth,life_stage,created_at").order("created_at", { ascending: false }),
     supabase.from("patient_relationships").select("patient_id,relationship_role,status,can_read,can_write").eq("user_id", user.id),
+    supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "platform_admin"),
   ]);
   const relationshipByPatient = new Map((relationships ?? []).map((relationship) => [relationship.patient_id, relationship]));
   const hasLoadError = Boolean(profilesError || relationshipsError);
 
   return <main className="account-page">
-    <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account/doctor" className="account-back-link"><Stethoscope size={15} /> Doctor dashboard</Link><Link href="/account/care" className="account-back-link"><ClipboardList size={15} /> Care tasks</Link><Link href="/account/notifications" className="account-back-link"><Bell size={15} /> Notifications</Link><Link href="/account/calendar" className="account-back-link"><CalendarDays size={15} /> Calendar</Link><Link href="/" className="account-back-link"><ArrowLeft size={15} /> Presentation demo</Link><form action={signOut}><button type="submit" className="account-signout"><LogOut size={15} /> Sign out</button></form></div></header>
+    <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions">{roles?.some((role) => role.role === "platform_admin") && <Link href="/account/admin" className="account-back-link"><ShieldCheck size={15} /> Admin review</Link>}<Link href="/account/doctor" className="account-back-link"><Stethoscope size={15} /> Doctor dashboard</Link><Link href="/account/care" className="account-back-link"><ClipboardList size={15} /> Care tasks</Link><Link href="/account/notifications" className="account-back-link"><Bell size={15} /> Notifications</Link><Link href="/account/calendar" className="account-back-link"><CalendarDays size={15} /> Calendar</Link><Link href="/" className="account-back-link"><ArrowLeft size={15} /> Presentation demo</Link><form action={signOut}><button type="submit" className="account-signout"><LogOut size={15} /> Sign out</button></form></div></header>
     <div className="account-layout">
       <div className="account-main-column">
         <div className="account-welcome"><span className="micro-label">YOUR PRIVATE HEALTH SPACE</span><h1>Patient profiles</h1><p>Manage your own profile and review any pending guardian requests.</p></div>

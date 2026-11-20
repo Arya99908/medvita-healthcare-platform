@@ -712,6 +712,41 @@ export type Database = {
         }
         Relationships: []
       }
+      doctor_verification_submissions: {
+        Row: {
+          doctor_id: string
+          issuing_jurisdiction: string
+          registration_number: string
+          submitted_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          doctor_id: string
+          issuing_jurisdiction: string
+          registration_number: string
+          submitted_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          doctor_id?: string
+          issuing_jurisdiction?: string
+          registration_number?: string
+          submitted_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "doctor_verification_submissions_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: true
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       emergency_alerts: {
         Row: {
           alert_type: string
@@ -2368,6 +2403,10 @@ export type Database = {
         Returns: string
       }
       export_my_data: { Args: never; Returns: Json }
+      review_doctor_application: {
+        Args: { p_decision: string; p_doctor_id: string; p_reason?: string | null }
+        Returns: boolean
+      }
       revoke_patient_invitation: {
         Args: { p_invitation_id: string }
         Returns: boolean

@@ -12,10 +12,11 @@ export default async function DoctorDashboardPage() {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) redirect("/login");
 
-  const [{ data: profile, error: profileError }, { data: relationships, error: relationshipsError }, { data: permissions, error: permissionsError }] = await Promise.all([
+  const [{ data: profile, error: profileError }, { data: relationships, error: relationshipsError }, { data: permissions, error: permissionsError }, { data: verificationDetails, error: verificationError }] = await Promise.all([
     supabase.from("doctors").select("id,display_name,specialty,organisation,verification_status").eq("user_id", user.id).limit(1).maybeSingle(),
     supabase.from("patient_relationships").select("patient_id,status,can_read").eq("user_id", user.id).eq("relationship_role", "doctor").eq("status", "active").eq("can_read", true),
     supabase.from("access_permissions").select("patient_id,expires_at").eq("user_id", user.id).eq("permission", "read").is("revoked_at", null),
+    supabase.from("doctor_verification_submissions").select("registration_number,issuing_jurisdiction").eq("user_id", user.id).limit(1).maybeSingle(),
   ]);
   // Patient profile RLS applies the authoritative expiry check in has_patient_access.
   const permissionPatientIds = new Set((permissions ?? []).map((permission) => permission.patient_id));
@@ -25,7 +26,7 @@ export default async function DoctorDashboardPage() {
   const { data: patients, error: patientsError } = authorizedPatientIds.length
     ? await supabase.from("patient_profiles").select("id,display_name,life_stage").in("id", authorizedPatientIds).order("display_name")
     : { data: [], error: null };
-  const hasLoadError = Boolean(profileError || relationshipsError || permissionsError || patientsError);
+  const hasLoadError = Boolean(profileError || relationshipsError || permissionsError || verificationError || patientsError);
 
   return <main className="account-page care-dashboard-page">
     <header className="account-topbar"><Link className="brand" href="/"><span className="brand-symbol" aria-hidden="true"><span /><span /></span><span>med<span>vita</span></span></Link><div className="account-top-actions"><Link href="/account" className="account-back-link"><ArrowLeft size={15} /> Profiles</Link><Link href="/account/calendar" className="account-back-link"><CalendarDays size={15} /> Calendar</Link><Link href="/account/care" className="account-back-link"><ClipboardList size={15} /> Care tasks</Link><form action={signOut}><button type="submit" className="account-signout"><LogOut size={15} /> Sign out</button></form></div></header>
@@ -42,7 +43,7 @@ export default async function DoctorDashboardPage() {
         </section>
         {profile && <div className="account-status active">Profile status: {profile.verification_status.replaceAll("_", " ")}</div>}
       </div>
-      <aside className="account-side-column"><DoctorProfileForm profile={profile ? { display_name: profile.display_name, specialty: profile.specialty, organisation: profile.organisation } : null} /><div className="account-side-help"><span className="micro-label">PATIENT DEMO</span><p>Switch between the six fictional life stages for a presentation.</p><Link href="/">Open presentation demo <ArrowLeft size={14} /></Link></div></aside>
+      <aside className="account-side-column"><DoctorProfileForm profile={profile ? { display_name: profile.display_name, specialty: profile.specialty, organisation: profile.organisation, registration_number: verificationDetails?.registration_number ?? "", issuing_jurisdiction: verificationDetails?.issuing_jurisdiction ?? "" } : null} /><div className="account-side-help"><span className="micro-label">PATIENT DEMO</span><p>Switch between the six fictional life stages for a presentation.</p><Link href="/">Open presentation demo <ArrowLeft size={14} /></Link></div></aside>
     </div>
   </main>;
 }
