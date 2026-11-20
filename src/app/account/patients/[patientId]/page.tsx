@@ -66,8 +66,11 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     ? await supabase.from("medical_conditions").select("id,name,status,reported_by,verification_status,diagnosed_on,notes,created_at").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(100)
     : { data: [], error: null };
   const { data: careTasks, error: careTasksError } = canRead && isAdultStage
-    ? await supabase.from("caregiver_tasks").select("id,title,due_at,status,notes,assigned_to,created_at").eq("patient_id", patientId).order("due_at", { ascending: true, nullsFirst: false }).limit(100)
+    ? await supabase.from("caregiver_tasks").select("id,title,due_at,status,notes,assigned_to,created_by,created_at").eq("patient_id", patientId).order("due_at", { ascending: true, nullsFirst: false }).limit(100)
     : { data: [], error: null };
+  const { data: assignableCaregivers } = canWrite && isAdultStage
+    ? await supabase.from("patient_relationships").select("user_id,relationship_role").eq("patient_id", patientId).eq("status", "active").eq("can_read", true).eq("can_write", true).neq("user_id", user.id).in("relationship_role", ["caregiver", "family_member", "guardian", "nurse"])
+    : { data: [] };
   const { data: menstrualRecords, error: menstrualRecordsError } = canRead && isAdolescentStage
     ? await supabase.from("menstrual_records").select("id,period_start,period_end,flow_note,symptom_note,created_at").eq("patient_id", patientId).order("period_start", { ascending: false }).limit(50)
     : { data: [], error: null };
@@ -120,7 +123,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       {canWrite && isChildStage && <ChildCareForms patientId={patientId} vaccinationDocuments={(documents ?? []).filter((document) => document.document_type === "vaccination_certificate").map(({ id, display_name }) => ({ id, display_name }))} />}
       {canWrite && (isAdultStage || isChildStage) && <VitalForm patientId={patientId} lifeStage={profile.life_stage} />}
       {canWrite && isAdultStage && <ConditionForm patientId={patientId} />}
-      {canWrite && isAdultStage && <CareTaskForm patientId={patientId} />}
+      {canWrite && isAdultStage && <CareTaskForm patientId={patientId} assignees={assignableCaregivers ?? []} />}
       {canWrite && isAdolescentStage && relationship.relationship_role === "patient" && <MenstrualJournalForm patientId={patientId} />}
       {canWrite && <AppointmentForm patientId={patientId} />}
       {canWrite && <MedicationForm patientId={patientId} lifeStage={profile.life_stage} />}
@@ -153,7 +156,7 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
       </section>}
       {canRead && isAdultStage && <section className="account-card" aria-labelledby="care-tasks-title"><div className="account-card-heading"><div><span className="micro-label">CAREGIVER COORDINATION</span><h2 id="care-tasks-title">Care tasks</h2><p>Tasks are visible to authorised readers; reminders and notifications are not sent.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></div>
         {careTasksError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Care tasks could not be loaded</strong><span>Reload the page or sign in again.</span></div>
-          : careTasks?.length ? <div className="timeline-event-list">{careTasks.map((task) => <article key={task.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{task.status === "complete" ? "Complete" : "Open"} · assigned to {task.assigned_to === user.id ? "you" : "caregiver"}</span>{task.due_at ? <LocalDateTime value={task.due_at} /> : <span className="timeline-verification">No due date</span>}</div><h3>{task.title}</h3>{task.notes && <p>{task.notes}</p>}{canWrite && <CareTaskStatusForm patientId={patientId} taskId={task.id} status={task.status} />}</article>)}</div>
+          : careTasks?.length ? <div className="timeline-event-list">{careTasks.map((task) => <article key={task.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{task.status === "complete" ? "Complete" : "Open"} · assigned to {task.assigned_to === user.id ? "you" : task.assigned_to ? `account ending ${task.assigned_to.slice(-4)}` : "unassigned"}</span>{task.due_at ? <LocalDateTime value={task.due_at} /> : <span className="timeline-verification">No due date</span>}</div><h3>{task.title}</h3>{task.notes && <p>{task.notes}</p>}{canWrite && <CareTaskStatusForm patientId={patientId} taskId={task.id} status={task.status} assignedTo={task.assigned_to} createdBy={task.created_by} currentUserId={user.id} />}</article>)}</div>
             : <div className="account-empty-state"><ClipboardList size={22} /><strong>No care tasks yet</strong><span>Add a task for preparation, a follow-up, or a handover note.</span></div>}
       </section>}
       {canRead && isChildStage && <section className="account-card" aria-labelledby="child-care-title"><div className="account-card-heading"><div><span className="micro-label">CHILD CARE LOGS</span><h2 id="child-care-title">Feeding and bowel notes</h2><p>Caregiver or patient entries are unverified and do not provide clinical guidance.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></div>

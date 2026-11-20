@@ -197,6 +197,7 @@ const medicalConditionSchema = z.object({
 
 const caregiverTaskSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
+  assignedTo: z.string().trim().optional().default("").refine((value) => !value || z.string().uuid().safeParse(value).success, "Choose an active caregiver."),
   title: z.string().trim().min(2, "Enter a short task name.").max(120, "Keep the task under 120 characters."),
   dueAt: z.string().trim().optional().default("").refine((value) => !value || isValidLocalDateTime(value), "Enter a valid due date and time."),
   dueAtOffset: z.coerce.number().int().min(-840).max(840),
@@ -503,7 +504,7 @@ export async function createMedicalCondition(patientId: string, _previous: CareL
 }
 
 export async function createCaregiverTask(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
-  const parsed = caregiverTaskSchema.safeParse({ patientId, title: formData.get("title"), dueAt: formData.get("dueAt") ?? "", dueAtOffset: formData.get("dueAtOffset") ?? "0", notes: formData.get("notes") ?? "" });
+  const parsed = caregiverTaskSchema.safeParse({ patientId, assignedTo: formData.get("assignedTo") ?? "", title: formData.get("title"), dueAt: formData.get("dueAt") ?? "", dueAtOffset: formData.get("dueAtOffset") ?? "0", notes: formData.get("notes") ?? "" });
   if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the task and try again." };
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -513,7 +514,12 @@ export async function createCaregiverTask(patientId: string, _previous: CareLogF
     supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
   ]);
   if (profileError || relationshipError || !profile || !["adult", "senior"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an adult or senior profile is required." };
-  const { error } = await supabase.from("caregiver_tasks").insert({ patient_id: patientId, title: parsed.data.title, due_at: parsed.data.dueAt ? new Date(localDateTimeToUtc(parsed.data.dueAt, parsed.data.dueAtOffset)).toISOString() : null, notes: parsed.data.notes || null, assigned_to: user.id, created_by: user.id });
+  const assignedTo = parsed.data.assignedTo || user.id;
+  if (assignedTo !== user.id) {
+    const { data: assignee, error: assigneeError } = await supabase.from("patient_relationships").select("user_id").eq("patient_id", patientId).eq("user_id", assignedTo).eq("status", "active").eq("can_read", true).eq("can_write", true).in("relationship_role", ["caregiver", "family_member", "guardian", "nurse"]).maybeSingle();
+    if (assigneeError || !assignee) return { status: "error", message: "Assign tasks only to a linked caregiver with active write access." };
+  }
+  const { error } = await supabase.from("caregiver_tasks").insert({ patient_id: patientId, title: parsed.data.title, due_at: parsed.data.dueAt ? new Date(localDateTimeToUtc(parsed.data.dueAt, parsed.data.dueAtOffset)).toISOString() : null, notes: parsed.data.notes || null, assigned_to: assignedTo, created_by: user.id });
   if (error) return { status: "error", message: "The care task could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Care task added to this profile." };

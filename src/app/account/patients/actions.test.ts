@@ -17,6 +17,7 @@ function query(result: unknown) {
   const chain = {
     select: vi.fn(() => chain),
     eq: vi.fn(() => chain),
+    in: vi.fn(() => chain),
     maybeSingle: vi.fn().mockResolvedValue(result),
   };
   return chain;
@@ -100,7 +101,7 @@ function conditionForm(values: Record<string, string> = {}) {
 
 function careTaskForm(values: Record<string, string> = {}) {
   const form = new FormData();
-  for (const [key, value] of Object.entries({ title: "Prepare for appointment", dueAt: "2026-11-20T09:00", dueAtOffset: "-330", notes: "Fictional reminder", ...values })) form.set(key, value);
+  for (const [key, value] of Object.entries({ assignedTo: "", title: "Prepare for appointment", dueAt: "2026-11-20T09:00", dueAtOffset: "-330", notes: "Fictional reminder", ...values })) form.set(key, value);
   return form;
 }
 
@@ -456,6 +457,34 @@ describe("adult and senior caregiver task actions", () => {
       ? query({ data: { id: patientId, life_stage: "child" }, error: null })
       : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: false }, error: null }) : { insert });
     const result = await createCaregiverTask(patientId, { status: "idle", message: "" }, careTaskForm());
+    expect(result.status).toBe("error");
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("assigns a task only to a linked caregiver with active write access", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    let relationshipReads = 0;
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships" ? query(relationshipReads++ === 0
+        ? { data: { status: "active", can_read: true, can_write: true }, error: null }
+        : { data: { user_id: "caregiver-1" }, error: null })
+        : { insert });
+    const result = await createCaregiverTask(patientId, { status: "idle", message: "" }, careTaskForm({ assignedTo: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }));
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ assigned_to: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", created_by: "user-1" }));
+  });
+
+  it("rejects assigning tasks to an unlinked account", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    let relationshipReads = 0;
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships" ? query(relationshipReads++ === 0
+        ? { data: { status: "active", can_read: true, can_write: true }, error: null }
+        : { data: null, error: null })
+        : { insert });
+    const result = await createCaregiverTask(patientId, { status: "idle", message: "" }, careTaskForm({ assignedTo: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }));
     expect(result.status).toBe("error");
     expect(insert).not.toHaveBeenCalled();
   });

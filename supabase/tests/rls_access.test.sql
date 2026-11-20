@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(99);
+select extensions.plan(105);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -142,7 +142,18 @@ select extensions.lives_ok($$update public.appointments set status='completed' w
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,assigned_to,created_by) values('99999999-9999-4999-8999-999999999999','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional authorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can add an own-profile care task');
 select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional unauthorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot add a care task to another patient profile');
+select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,assigned_to,created_by) values('abababab-abab-4bab-8bab-abababababab','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task assigned to caregiver','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222')$$,'patient can assign a task to an active writable caregiver');
+select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task for unlinked user','55555555-5555-4555-8555-555555555555','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot assign a task to an unlinked account');
 select extensions.lives_ok($$update public.caregiver_tasks set status='complete' where id='99999999-9999-4999-8999-999999999999'$$,'patient with active write access can complete own care task');
+select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333',true);
+select extensions.lives_ok($$update public.caregiver_tasks set status='complete' where id='abababab-abab-4bab-8bab-abababababab'$$,'assigned caregiver can mark their task complete');
+with changed as (update public.caregiver_tasks set status='complete' where id='99999999-9999-4999-8999-999999999999' returning id)
+select extensions.is((select count(*) from changed),0::bigint,'caregiver cannot complete another persons task');
+with deleted as (delete from public.caregiver_tasks where id='abababab-abab-4bab-8bab-abababababab' returning id)
+select extensions.is((select count(*) from deleted),1::bigint,'assigned caregiver can remove their own task');
+with deleted as (delete from public.caregiver_tasks where id='99999999-9999-4999-8999-999999999999' returning id)
+select extensions.is((select count(*) from deleted),0::bigint,'caregiver cannot remove a task assigned to another person');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.lives_ok($$insert into public.medication_schedules(id,patient_id,medication_id,frequency,administration_times,created_by) values('88888888-8888-4888-8888-888888888888','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','dddddddd-dddd-4ddd-8ddd-dddddddddddd','Fictional schedule','["08:00","20:00"]','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can add a schedule for own medicine note');
 select extensions.throws_ok($$insert into public.medication_schedules(patient_id,medication_id,frequency,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','dddddddd-dddd-4ddd-8ddd-dddddddddddd','Fictional unauthorized schedule','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot create a medication schedule for another profile');
 select extensions.lives_ok($$insert into public.medication_administration_logs(patient_id,medication_id,schedule_id,status,recorded_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','dddddddd-dddd-4ddd-8ddd-dddddddddddd','88888888-8888-4888-8888-888888888888','taken','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can record a dose event for own medicine note');
