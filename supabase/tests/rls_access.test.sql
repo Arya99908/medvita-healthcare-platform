@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(68);
+select extensions.plan(72);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -61,6 +61,7 @@ select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::
 select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,urination_records}'),0,'export includes an empty urination log list when no visible records exist');
 select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,sleep_records}'),0,'export includes an empty sleep log list when no visible records exist');
 select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,vaccination_records}'),0,'export includes an empty child vaccination list when no visible records exist');
+select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,developmental_milestones}'),0,'export includes an empty child milestone list when no visible records exist');
 select extensions.is(jsonb_array_length(current_setting('medvita.test_export')::jsonb #> '{tables,patient_sharing_sessions}'),1,'export includes the caller-visible sharing session');
 select extensions.is(coalesce(((current_setting('medvita.test_export')::jsonb #> '{tables,patient_sharing_sessions,0}') ? 'token_hash'),false),false,'export omits the sharing token hash');
 select extensions.is(current_setting('medvita.test_export')::jsonb #>> '{account_id}','11111111-1111-4111-8111-111111111111','export identifies the authenticated account');
@@ -111,6 +112,9 @@ select set_config('request.jwt.claim.sub','33333333-3333-4333-8333-333333333333'
 select extensions.lives_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','temperature',38.2,'°C','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can record a child temperature');
 select extensions.throws_ok($$insert into public.vitals(patient_id,vital_type,value,unit,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','blood_pressure_systolic',110,'mmHg','caregiver','33333333-3333-4333-8333-333333333333')$$,'42501',null,'child vitals are limited to temperature readings');
 select extensions.lives_ok($$insert into public.vaccination_records(patient_id,vaccine_name,dose_label,status,due_on,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Fictional sample vaccine','Dose 1','planned','2026-12-15','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can add a child vaccination date');
+select extensions.lives_ok($$insert into public.developmental_milestones(patient_id,milestone_name,domain,status,recorded_on,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Fictional sample observation','motor','observed','2026-11-20','caregiver','33333333-3333-4333-8333-333333333333')$$,'linked caregiver can record a child milestone observation');
+select extensions.throws_ok($$insert into public.developmental_milestones(patient_id,milestone_name,domain,status,recorded_on,source,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional sample observation','motor','observed','2026-11-20','caregiver','33333333-3333-4333-8333-333333333333')$$,'42501',null,'milestone observations cannot be added to adult profiles');
+select extensions.throws_ok($$insert into public.developmental_milestones(patient_id,milestone_name,domain,status,recorded_on,source,created_by) values('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','Fictional follow-up','communication','follow_up','2026-11-20','caregiver','33333333-3333-4333-8333-333333333333')$$,'23514',null,'a planned milestone follow-up requires a follow-up date');
 reset role;
 insert into public.patient_relationships(patient_id,user_id,relationship_role,can_read,can_write,status,created_by)
 values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','33333333-3333-4333-8333-333333333333','guardian',true,true,'active','22222222-2222-4222-8222-222222222222');

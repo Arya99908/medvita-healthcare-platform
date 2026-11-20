@@ -517,6 +517,59 @@ export type Database = {
           },
         ]
       }
+      developmental_milestones: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          domain: string
+          follow_up_on: string | null
+          id: string
+          milestone_name: string
+          notes: string | null
+          patient_id: string
+          recorded_on: string
+          source: string
+          status: string
+          verification_status: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          domain: string
+          follow_up_on?: string | null
+          id?: string
+          milestone_name: string
+          notes?: string | null
+          patient_id: string
+          recorded_on?: string
+          source?: string
+          status: string
+          verification_status?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          domain?: string
+          follow_up_on?: string | null
+          id?: string
+          milestone_name?: string
+          notes?: string | null
+          patient_id?: string
+          recorded_on?: string
+          source?: string
+          status?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "developmental_milestones_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       doctors: {
         Row: {
           created_at: string

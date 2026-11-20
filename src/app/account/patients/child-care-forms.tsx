@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, type ChangeEvent } from "react";
 import { Check, ClipboardList, Plus } from "lucide-react";
-import { createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createSleepRecord, createUrinationRecord, createVaccinationRecord, createVomitingRecord, type CareLogFormState } from "./actions";
+import { createBowelMovementRecord, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createSleepRecord, createUrinationRecord, createVaccinationRecord, createVomitingRecord, type CareLogFormState } from "./actions";
 
 const initialState: CareLogFormState = { status: "idle", message: "" };
 
@@ -61,6 +61,9 @@ export default function ChildCareForms({ patientId, vaccinationDocuments = [] }:
   const [vaccinationState, vaccinationAction, vaccinationPending] = useActionState(createVaccinationRecord.bind(null, patientId), initialState);
   const vaccinationFormRef = useRef<HTMLFormElement>(null);
   useEffect(() => { if (vaccinationState.status === "success") vaccinationFormRef.current?.reset(); }, [vaccinationState]);
+  const [milestoneState, milestoneAction, milestonePending] = useActionState(createDevelopmentalMilestone.bind(null, patientId), initialState);
+  const milestoneFormRef = useRef<HTMLFormElement>(null);
+  useEffect(() => { if (milestoneState.status === "success") milestoneFormRef.current?.reset(); }, [milestoneState]);
   return <>
     <CareLogForm patientId={patientId} kind="feeding" />
     <CareLogForm patientId={patientId} kind="bowel" />
@@ -80,6 +83,20 @@ export default function ChildCareForms({ patientId, vaccinationDocuments = [] }:
         <p className="timeline-privacy-note">Use the child&apos;s clinician or official local schedule to confirm due dates. This record is not a vaccination recommendation.</p>
         {vaccinationState.message && <p className={`account-form-message ${vaccinationState.status}`} role="status">{vaccinationState.status === "success" && <Check size={15} />}{vaccinationState.message}</p>}
         <button className="primary-button account-submit" type="submit" disabled={vaccinationPending}><Plus size={16} />{vaccinationPending ? "Saving…" : "Save vaccination"}</button>
+      </form>
+    </details>
+    <details className="account-card account-entry-disclosure">
+      <summary className="account-card-heading"><div><span className="micro-label">DEVELOPMENT NOTES</span><h2>Record an observation</h2><p>Enter what you observed. The app does not assess development or compare with age norms.</p></div><span className="account-card-icon"><ClipboardList size={18} /></span></summary>
+      <form ref={milestoneFormRef} action={milestoneAction} className="account-profile-form timeline-form">
+        <label htmlFor="milestone-name">Milestone or observation</label><input id="milestone-name" name="milestoneName" minLength={2} maxLength={100} required />
+        <label htmlFor="milestone-domain">Area</label><select id="milestone-domain" name="domain" defaultValue="motor"><option value="motor">Movement</option><option value="communication">Communication</option><option value="cognitive">Thinking and learning</option><option value="social_emotional">Social and emotional</option><option value="self_care">Self-care</option><option value="other">Other</option></select>
+        <label htmlFor="milestone-status">Observation</label><select id="milestone-status" name="status" defaultValue="observed"><option value="observed">Observed</option><option value="not_observed">Not observed</option><option value="follow_up">Follow-up planned</option></select>
+        <label htmlFor="milestone-recorded">Observation date</label><input id="milestone-recorded" name="recordedOn" type="date" required />
+        <label htmlFor="milestone-follow-up">Follow-up date <span>(required when follow-up is planned)</span></label><input id="milestone-follow-up" name="followUpOn" type="date" />
+        <label htmlFor="milestone-notes">Caregiver notes <span>(optional)</span></label><textarea id="milestone-notes" name="notes" maxLength={500} rows={2} />
+        <p className="timeline-privacy-note">This is a caregiver record, not a developmental screening. Discuss questions or concerns with the child&apos;s clinician; this prototype does not send follow-up reminders.</p>
+        {milestoneState.message && <p className={`account-form-message ${milestoneState.status}`} role="status">{milestoneState.status === "success" && <Check size={15} />}{milestoneState.message}</p>}
+        <button className="primary-button account-submit" type="submit" disabled={milestonePending}><Plus size={16} />{milestonePending ? "Saving…" : "Save observation"}</button>
       </form>
     </details>
     <details className="account-card account-entry-disclosure">

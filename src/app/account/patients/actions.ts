@@ -198,6 +198,18 @@ const vaccinationSchema = z.object({
   if (value.status === "administered" && !value.administeredOn) context.addIssue({ code: "custom", path: ["administeredOn"], message: "Add the administration date for a completed vaccination." });
 });
 
+const milestoneSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  milestoneName: z.string().trim().min(2, "Enter the milestone or observation.").max(100),
+  domain: z.enum(["motor", "communication", "cognitive", "social_emotional", "self_care", "other"]),
+  status: z.enum(["observed", "not_observed", "follow_up"]),
+  recordedOn: z.string().trim().refine(isValidDateOnly, "Enter a valid observation date."),
+  followUpOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid follow-up date."),
+  notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
+}).superRefine((value, context) => {
+  if (value.status === "follow_up" && !value.followUpOn) context.addIssue({ code: "custom", path: ["followUpOn"], message: "Add a follow-up date for this observation." });
+});
+
 const documentSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   displayName: z.string().trim().min(2, "Enter a short document label.").max(80, "Keep the label under 80 characters.").refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Remove control characters from the document label."),
@@ -498,6 +510,44 @@ export async function createVaccinationRecord(patientId: string, _previous: Care
   if (error) return { status: "error", message: "The vaccination record could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Vaccination record saved as an unverified caregiver entry." };
+}
+
+export async function createDevelopmentalMilestone(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = milestoneSchema.safeParse({
+    patientId,
+    milestoneName: formData.get("milestoneName"),
+    domain: formData.get("domain"),
+    status: formData.get("status"),
+    recordedOn: formData.get("recordedOn"),
+    followUpOn: formData.get("followUpOn") ?? "",
+    notes: formData.get("notes") ?? "",
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the observation and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving a milestone observation." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("relationship_role,status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["infant", "child"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an infant or child profile is required." };
+  const role = relationship.relationship_role;
+  const source = role === "patient" ? "patient" : role === "doctor" ? "clinician" : "caregiver";
+  const { error } = await supabase.from("developmental_milestones").insert({
+    patient_id: patientId,
+    milestone_name: parsed.data.milestoneName,
+    domain: parsed.data.domain,
+    status: parsed.data.status,
+    recorded_on: parsed.data.recordedOn,
+    follow_up_on: parsed.data.followUpOn || null,
+    notes: parsed.data.notes || null,
+    source,
+    verification_status: "unverified",
+    created_by: user.id,
+  });
+  if (error) return { status: "error", message: "The milestone observation could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Observation saved as an unverified caregiver entry." };
 }
 
 export async function createAppointment(patientId: string, _previous: AppointmentFormState, formData: FormData): Promise<AppointmentFormState> {

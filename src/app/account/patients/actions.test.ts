@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedication, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -95,6 +95,12 @@ function sleepForm(values: Record<string, string> = {}) {
 function vaccinationForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ vaccineName: "Fictional sample vaccine", doseLabel: "Dose 1", status: "planned", dueOn: "2026-12-15", administeredOn: "", documentId: "", notes: "Fictional reminder", ...values })) form.set(key, value);
+  return form;
+}
+
+function milestoneForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ milestoneName: "Fictional sample observation", domain: "motor", status: "observed", recordedOn: "2026-11-20", followUpOn: "", notes: "Caregiver-entered fictional note", ...values })) form.set(key, value);
   return form;
 }
 
@@ -450,6 +456,36 @@ describe("child vaccination server action", () => {
     const result = await createVaccinationRecord(patientId, { status: "idle", message: "" }, vaccinationForm({ status: "administered", dueOn: "", administeredOn: "" }));
     expect(result.status).toBe("error");
     expect(result.message).toMatch(/administration date/i);
+    expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("child developmental milestone server action", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null })
+        : { insert: vi.fn().mockResolvedValue({ error: null }) });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("saves a caregiver-entered child observation without a developmental assessment", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { relationship_role: "guardian", status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createDevelopmentalMilestone(patientId, { status: "idle", message: "" }, milestoneForm({ status: "follow_up", followUpOn: "2026-12-01" }));
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, milestone_name: "Fictional sample observation", domain: "motor", status: "follow_up", recorded_on: "2026-11-20", follow_up_on: "2026-12-01", source: "caregiver", verification_status: "unverified", created_by: "user-1" }));
+  });
+
+  it("requires a follow-up date when follow-up is planned", async () => {
+    const result = await createDevelopmentalMilestone(patientId, { status: "idle", message: "" }, milestoneForm({ status: "follow_up", followUpOn: "" }));
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/follow-up date/i);
     expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
   });
 });
