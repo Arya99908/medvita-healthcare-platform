@@ -321,6 +321,31 @@ const caregiverAvailabilitySchema = z.object({
   note: z.string().trim().max(160, "Keep the note under 160 characters.").optional().default(""),
 });
 
+const hospitalVisitSchema = z.object({
+  visitAt: z.string().trim().min(1, "Choose the visit date and time.").refine(isValidLocalDateTime, "Enter a valid visit date and time."),
+  visitAtOffset: z.coerce.number().int().min(-840).max(840),
+  visitType: z.enum(["consultation", "emergency", "outpatient", "procedure", "other"]),
+  facilityName: z.string().trim().max(160, "Keep the facility name under 160 characters.").refine((value) => !value || value.length >= 2, "Enter at least two characters for the facility name.").optional().default(""),
+  providerName: z.string().trim().max(120, "Keep the clinician name under 120 characters.").refine((value) => !value || value.length >= 2, "Enter at least two characters for the clinician name.").optional().default(""),
+  notes: z.string().trim().max(1200, "Keep the visit note under 1,200 characters.").optional().default(""),
+  visibility: z.enum(["general", "sensitive_adolescent"]),
+});
+
+const hospitalAdmissionSchema = z.object({
+  admittedAt: z.string().trim().min(1, "Choose the admission date and time.").refine(isValidLocalDateTime, "Enter a valid admission date and time."),
+  admittedAtOffset: z.coerce.number().int().min(-840).max(840),
+  dischargedAt: z.string().trim().optional().default("").refine((value) => !value || isValidLocalDateTime(value), "Enter a valid discharge date and time."),
+  dischargedAtOffset: z.coerce.number().int().min(-840).max(840),
+  facilityName: z.string().trim().max(160, "Keep the facility name under 160 characters.").refine((value) => !value || value.length >= 2, "Enter at least two characters for the facility name.").optional().default(""),
+  summary: z.string().trim().max(2000, "Keep the discharge note under 2,000 characters.").optional().default(""),
+  dischargeDocumentId: z.union([z.literal(""), z.string().uuid("Choose a valid discharge document.")]).optional().default(""),
+  visibility: z.enum(["general", "sensitive_adolescent"]),
+}).superRefine((value, context) => {
+  if (value.dischargedAt && localDateTimeToUtc(value.dischargedAt, value.dischargedAtOffset) <= localDateTimeToUtc(value.admittedAt, value.admittedAtOffset)) {
+    context.addIssue({ code: "custom", path: ["dischargedAt"], message: "Discharge time must be after admission time." });
+  }
+});
+
 const structuredRecordBase = z.object({
   patientId: z.string().uuid("Choose a valid profile."),
   recordId: z.string().uuid("Choose a valid record."),
@@ -676,6 +701,78 @@ export async function setCaregiverAvailability(_previous: CareLogFormState, form
   if (error) return { status: "error", message: "Availability could not be shared. Check your profile access and try again." };
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
   return { status: "success", message: "Availability shared with this profile's authorized care team." };
+}
+
+export async function createHospitalVisit(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = hospitalVisitSchema.safeParse({
+    visitAt: formData.get("visitAt"), visitAtOffset: formData.get("visitAtOffset") ?? "0",
+    visitType: formData.get("visitType"), facilityName: formData.get("facilityName") ?? "",
+    providerName: formData.get("providerName") ?? "", notes: formData.get("notes") ?? "",
+    visibility: formData.get("visibility") ?? "general",
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the visit details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving this visit." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships")
+    .select("status,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_write) return { status: "error", message: "Active write access is required to add a visit to this profile." };
+  if (parsed.data.visibility === "sensitive_adolescent") {
+    const { data: profile, error: profileError } = await supabase.from("patient_profiles").select("life_stage").eq("id", patientId).maybeSingle();
+    if (profileError || profile?.life_stage !== "adolescent") return { status: "error", message: "Sensitive visibility is available only for an adolescent profile." };
+  }
+  const { error } = await supabase.from("hospital_visits").insert({
+    patient_id: patientId,
+    visit_date: new Date(localDateTimeToUtc(parsed.data.visitAt, parsed.data.visitAtOffset)).toISOString(),
+    visit_type: parsed.data.visitType,
+    facility_name: parsed.data.facilityName || null,
+    provider_name: parsed.data.providerName || null,
+    notes: parsed.data.notes || null,
+    visibility: parsed.data.visibility,
+    created_by: user.id,
+  });
+  if (error) return { status: "error", message: "The visit could not be saved. Check profile access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Visit saved as an unverified patient or caregiver report." };
+}
+
+export async function createHospitalAdmission(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = hospitalAdmissionSchema.safeParse({
+    admittedAt: formData.get("admittedAt"), admittedAtOffset: formData.get("admittedAtOffset") ?? "0",
+    dischargedAt: formData.get("dischargedAt") ?? "", dischargedAtOffset: formData.get("dischargedAtOffset") ?? "0",
+    facilityName: formData.get("facilityName") ?? "", summary: formData.get("summary") ?? "",
+    dischargeDocumentId: formData.get("dischargeDocumentId") ?? "",
+    visibility: formData.get("visibility") ?? "general",
+  });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the admission details and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before saving this admission." };
+  const { data: relationship, error: relationshipError } = await supabase.from("patient_relationships")
+    .select("status,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle();
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_write) return { status: "error", message: "Active write access is required to add an admission to this profile." };
+  if (parsed.data.visibility === "sensitive_adolescent") {
+    const { data: profile, error: profileError } = await supabase.from("patient_profiles").select("life_stage").eq("id", patientId).maybeSingle();
+    if (profileError || profile?.life_stage !== "adolescent") return { status: "error", message: "Sensitive visibility is available only for an adolescent profile." };
+  }
+  if (parsed.data.dischargeDocumentId) {
+    const { data: document, error: documentError } = await supabase.from("medical_documents").select("id")
+      .eq("id", parsed.data.dischargeDocumentId).eq("patient_id", patientId).eq("upload_status", "uploaded").eq("visibility", parsed.data.visibility).maybeSingle();
+    if (documentError || !document) return { status: "error", message: "Choose an uploaded document from this patient profile." };
+  }
+  const { error } = await supabase.from("hospital_admissions").insert({
+    patient_id: patientId,
+    admitted_at: new Date(localDateTimeToUtc(parsed.data.admittedAt, parsed.data.admittedAtOffset)).toISOString(),
+    discharged_at: parsed.data.dischargedAt ? new Date(localDateTimeToUtc(parsed.data.dischargedAt, parsed.data.dischargedAtOffset)).toISOString() : null,
+    facility_name: parsed.data.facilityName || null,
+    summary: parsed.data.summary || null,
+    discharge_document_id: parsed.data.dischargeDocumentId || null,
+    visibility: parsed.data.visibility,
+    created_by: user.id,
+  });
+  if (error) return { status: "error", message: "The admission could not be saved. Check profile access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Admission saved as an unverified patient or caregiver report." };
 }
 
 export async function createMenstrualRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {

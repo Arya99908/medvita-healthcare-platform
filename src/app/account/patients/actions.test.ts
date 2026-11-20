@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, deleteStructuredHealthRecord, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, setCaregiverAvailability, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, updateStructuredHealthRecord, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCalendarAppointment, createCaregiverHandover, createCaregiverTask, createDevelopmentalMilestone, createEmergencyContact, createFeedingRecord, createGrowthRecord, createHealthEvent, createHospitalAdmission, createHospitalVisit, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, deleteAppointment, deleteEmergencyContact, deleteHealthEvent, deleteMedicationNote, deleteStructuredHealthRecord, logMedicationAdministration, recordEmergencyAlert, removePatientDocument, setCaregiverAvailability, updateAppointment, updateAppointmentStatus, updateCaregiverTaskStatus, updateHealthEvent, updateMedicationDetails, updateMedicationStatus, updateStructuredHealthRecord, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -662,6 +662,63 @@ describe("caregiver availability action", () => {
 
     expect(result.status).toBe("error");
     expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("hospital history actions", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "writer-user" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  const relationQuery = () => query({ data: { status: "active", can_write: true }, error: null });
+  const visitForm = (values: Record<string, string> = {}) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries({ visitAt: "2026-11-18T10:30", visitAtOffset: "-330", visitType: "consultation", facilityName: "Fictional clinic", providerName: "Dr. Fictional", notes: "Fictional follow-up note", visibility: "general", ...values })) form.set(key, value);
+    return form;
+  };
+  const admissionForm = (values: Record<string, string> = {}) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries({ admittedAt: "2026-11-10T08:00", admittedAtOffset: "-330", dischargedAt: "2026-11-12T14:00", dischargedAtOffset: "-330", facilityName: "Fictional hospital", summary: "Fictional discharge note", dischargeDocumentId: "", visibility: "general", ...values })) form.set(key, value);
+    return form;
+  };
+
+  it("saves a visit with its local time, facility, and self-reported source", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationQuery() : { insert });
+    const result = await createHospitalVisit(patientId, { status: "idle", message: "" }, visitForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, visit_type: "consultation", facility_name: "Fictional clinic", provider_name: "Dr. Fictional", visibility: "general", created_by: "writer-user", visit_date: "2026-11-18T05:00:00.000Z" }));
+  });
+
+  it("links only an uploaded discharge document from the same profile", async () => {
+    const documentId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const documentQuery = query({ data: { id: documentId }, error: null });
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationQuery() : table === "medical_documents" ? documentQuery : { insert });
+    const result = await createHospitalAdmission(patientId, { status: "idle", message: "" }, admissionForm({ dischargeDocumentId: documentId }));
+    expect(result.status).toBe("success");
+    expect(mockSupabase.from).toHaveBeenCalledWith("medical_documents");
+    expect(documentQuery.eq).toHaveBeenCalledWith("visibility", "general");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, facility_name: "Fictional hospital", discharge_document_id: documentId, created_by: "writer-user" }));
+  });
+
+  it("rejects a discharge date before admission without writing", async () => {
+    const insert = vi.fn();
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationQuery() : { insert });
+    const result = await createHospitalAdmission(patientId, { status: "idle", message: "" }, admissionForm({ dischargedAt: "2026-11-09T14:00" }));
+    expect(result).toEqual({ status: "error", message: "Discharge time must be after admission time." });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("does not allow adolescent-only privacy on other life stages", async () => {
+    const insert = vi.fn();
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships" ? relationQuery()
+      : table === "patient_profiles" ? query({ data: { life_stage: "adult" }, error: null }) : { insert });
+    const result = await createHospitalVisit(patientId, { status: "idle", message: "" }, visitForm({ visibility: "sensitive_adolescent" }));
+    expect(result).toEqual({ status: "error", message: "Sensitive visibility is available only for an adolescent profile." });
+    expect(insert).not.toHaveBeenCalled();
   });
 });
 

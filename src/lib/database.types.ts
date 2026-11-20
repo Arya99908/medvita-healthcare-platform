@@ -1161,6 +1161,7 @@ export type Database = {
           created_by: string | null
           discharge_document_id: string | null
           discharged_at: string | null
+          facility_name: string | null
           hospital_id: string | null
           id: string
           patient_id: string
@@ -1173,6 +1174,7 @@ export type Database = {
           created_by?: string | null
           discharge_document_id?: string | null
           discharged_at?: string | null
+          facility_name?: string | null
           hospital_id?: string | null
           id?: string
           patient_id: string
@@ -1185,6 +1187,7 @@ export type Database = {
           created_by?: string | null
           discharge_document_id?: string | null
           discharged_at?: string | null
+          facility_name?: string | null
           hospital_id?: string | null
           id?: string
           patient_id?: string
@@ -1220,10 +1223,12 @@ export type Database = {
           created_at: string
           created_by: string | null
           doctor_id: string | null
+          facility_name: string | null
           hospital_id: string | null
           id: string
           notes: string | null
           patient_id: string
+          provider_name: string | null
           visibility: string
           visit_date: string
           visit_type: string | null
@@ -1232,10 +1237,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           doctor_id?: string | null
+          facility_name?: string | null
           hospital_id?: string | null
           id?: string
           notes?: string | null
           patient_id: string
+          provider_name?: string | null
           visibility?: string
           visit_date: string
           visit_type?: string | null
@@ -1244,10 +1251,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           doctor_id?: string | null
+          facility_name?: string | null
           hospital_id?: string | null
           id?: string
           notes?: string | null
           patient_id?: string
+          provider_name?: string | null
           visibility?: string
           visit_date?: string
           visit_type?: string | null

@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(234);
+select extensions.plan(242);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -250,6 +250,16 @@ select extensions.is((select count(*) from public.caregiver_availability where p
 select extensions.is(jsonb_array_length(public.export_my_data() #> '{tables,caregiver_availability}'),1,'account export includes RLS-visible caregiver availability');
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 select extensions.is((select count(*) from public.caregiver_availability where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'unrelated account cannot read another profile caregiver availability');
+select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.lives_ok($$insert into public.hospital_visits(id,patient_id,visit_date,visit_type,facility_name,provider_name,notes,created_by) values('15151515-1515-4151-8151-151515151515','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-11-18 05:00:00+00','consultation','Fictional clinic','Fictional clinician','Fictional visit note','22222222-2222-4222-8222-222222222222')$$,'profile writer can save a self-reported hospital visit');
+select extensions.lives_ok($$insert into public.hospital_admissions(id,patient_id,admitted_at,discharged_at,facility_name,summary,created_by) values('16161616-1616-4161-8161-161616161616','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-11-10 02:30:00+00','2026-11-12 08:30:00+00','Fictional hospital','Fictional discharge note','22222222-2222-4222-8222-222222222222')$$,'profile writer can save a self-reported hospital admission');
+select extensions.is((select count(*) from public.hospital_visits where id='15151515-1515-4151-8151-151515151515'),1::bigint,'authorized profile writer can read saved hospital visit history');
+select extensions.is((select count(*) from public.hospital_admissions where id='16161616-1616-4161-8161-161616161616'),1::bigint,'authorized profile writer can read saved hospital admission history');
+select extensions.is((select count(*) from public.patient_activity_events where resource_type in ('hospital_visits','hospital_admissions') and action='record_added'),2::bigint,'hospital visits and admissions appear in the privacy-filtered care activity feed');
+select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
+select extensions.is((select count(*) from public.hospital_visits where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')+(select count(*) from public.hospital_admissions where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),0::bigint,'unrelated account cannot read another profile hospital history');
+select extensions.throws_ok($$insert into public.hospital_visits(patient_id,visit_date,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-11-18 05:00:00+00','11111111-1111-4111-8111-111111111111')$$,'42501',null,'unrelated account cannot add a hospital visit to another profile');
+select extensions.throws_ok($$insert into public.hospital_admissions(patient_id,admitted_at,created_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','2026-11-18 05:00:00+00','11111111-1111-4111-8111-111111111111')$$,'42501',null,'unrelated account cannot add a hospital admission to another profile');
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
 select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional unauthorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot add a care task to another patient profile');
 select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,due_at,assigned_to,created_by) values('abababab-abab-4bab-8bab-abababababab','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional task assigned to caregiver','2026-11-19 00:00:00+00','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222')$$,'patient can assign a task to an active writable caregiver');
