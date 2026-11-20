@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(75);
+select extensions.plan(79);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -139,6 +139,10 @@ select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222'
 select extensions.lives_ok($$insert into public.caregiver_tasks(id,patient_id,title,assigned_to,created_by) values('99999999-9999-4999-8999-999999999999','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Fictional authorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can add an own-profile care task');
 select extensions.throws_ok($$insert into public.caregiver_tasks(patient_id,title,assigned_to,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Fictional unauthorized care task','22222222-2222-4222-8222-222222222222','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot add a care task to another patient profile');
 select extensions.lives_ok($$update public.caregiver_tasks set status='complete' where id='99999999-9999-4999-8999-999999999999'$$,'patient with active write access can complete own care task');
+select extensions.lives_ok($$insert into public.medication_schedules(id,patient_id,medication_id,frequency,administration_times,created_by) values('88888888-8888-4888-8888-888888888888','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','dddddddd-dddd-4ddd-8ddd-dddddddddddd','Fictional schedule','["08:00","20:00"]','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can add a schedule for own medicine note');
+select extensions.throws_ok($$insert into public.medication_schedules(patient_id,medication_id,frequency,created_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','dddddddd-dddd-4ddd-8ddd-dddddddddddd','Fictional unauthorized schedule','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot create a medication schedule for another profile');
+select extensions.lives_ok($$insert into public.medication_administration_logs(patient_id,medication_id,schedule_id,status,recorded_by) values('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','dddddddd-dddd-4ddd-8ddd-dddddddddddd','88888888-8888-4888-8888-888888888888','taken','22222222-2222-4222-8222-222222222222')$$,'patient with active write access can record a dose event for own medicine note');
+select extensions.throws_ok($$insert into public.medication_administration_logs(patient_id,medication_id,status,recorded_by) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','dddddddd-dddd-4ddd-8ddd-dddddddddddd','taken','22222222-2222-4222-8222-222222222222')$$,'42501',null,'patient cannot record a dose event for another profile');
 select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111',true);
 with changed as (update public.appointments set status='cancelled' where id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' returning id)
 select extensions.is((select count(*) from changed),0::bigint,'patient cannot update another patient appointment plan');

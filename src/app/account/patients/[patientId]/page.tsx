@@ -7,6 +7,7 @@ import AppointmentForm from "../appointment-form";
 import AppointmentStatusForm from "../appointment-status-form";
 import MedicationForm from "../medication-form";
 import MedicationStatusForm from "../medication-status-form";
+import { MedicationAdministrationForm, MedicationScheduleForm } from "../medication-schedule-form";
 import DocumentForm from "../document-form";
 import SymptomForm from "../symptom-form";
 import ChildCareForms from "../child-care-forms";
@@ -70,6 +71,12 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
     : { data: [], error: null };
   const { data: medications, error: medicationsError } = canRead
     ? await supabase.from("medication_records").select("id,medicine_name,generic_name,strength,route,instructions,status,visibility,created_at").eq("patient_id", patientId).order("created_at", { ascending: false })
+    : { data: [], error: null };
+  const { data: medicationSchedules, error: medicationSchedulesError } = canRead
+    ? await supabase.from("medication_schedules").select("id,medication_id,frequency,administration_times,starts_on,ends_on,status,reminder_enabled").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(100)
+    : { data: [], error: null };
+  const { data: medicationLogs, error: medicationLogsError } = canRead
+    ? await supabase.from("medication_administration_logs").select("id,medication_id,schedule_id,status,administered_at,recorded_by,notes").eq("patient_id", patientId).order("administered_at", { ascending: false }).limit(100)
     : { data: [], error: null };
   const { data: documents, error: documentsError } = canRead
     ? await supabase.from("medical_documents").select("id,display_name,document_type,document_date,storage_path,upload_status,verification_status,visibility,created_at").eq("patient_id", patientId).order("created_at", { ascending: false })
@@ -139,8 +146,13 @@ export default async function PatientTimelinePage({ params }: { params: Promise<
         </>}
       </section>}
       {canRead && <section className="account-card" aria-labelledby="medication-list-title"><div className="account-card-heading"><div><span className="micro-label">MEDICINE NOTES</span><h2 id="medication-list-title">Medicines</h2><p>Self-reported entries are not prescriptions or dose guidance.</p></div><span className="account-card-icon"><Pill size={18} /></span></div>
-        {medicationsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Medicine notes could not be loaded</strong><span>Reload the page or sign in again.</span></div>
-          : medications?.length ? <div className="timeline-event-list">{medications.map((medication) => <article key={medication.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{medication.status === "active" ? "Listed as current" : medication.status === "historical" ? "Past or stopped" : medication.status}</span><span className="timeline-verification">Unverified note</span></div><h3>{medication.medicine_name}</h3>{medication.generic_name && <p>Generic name: {medication.generic_name}</p>}{medication.strength && <p>Strength: {medication.strength}</p>}{medication.route && <p>How it is taken: {medication.route}</p>}{medication.instructions && <p>Recorded directions: {medication.instructions}</p>}{canWrite && <MedicationStatusForm patientId={patientId} medicationId={medication.id} status={medication.status} />}</article>)}</div>
+        {medicationsError || medicationSchedulesError || medicationLogsError ? <div className="account-empty-state"><ShieldCheck size={22} /><strong>Medicine notes could not be loaded</strong><span>Reload the page or sign in again.</span></div>
+          : medications?.length ? <div className="timeline-event-list">{medications.map((medication) => { const schedules = (medicationSchedules ?? []).filter((schedule) => schedule.medication_id === medication.id); const logs = (medicationLogs ?? []).filter((log) => log.medication_id === medication.id); return <article key={medication.id} className="timeline-event"><div className="timeline-event-heading"><span className="timeline-event-type">{medication.status === "active" ? "Listed as current" : medication.status === "historical" ? "Past or stopped" : medication.status}</span><span className="timeline-verification">Unverified note</span></div><h3>{medication.medicine_name}</h3>{medication.generic_name && <p>Generic name: {medication.generic_name}</p>}{medication.strength && <p>Strength: {medication.strength}</p>}{medication.route && <p>How it is taken: {medication.route}</p>}{medication.instructions && <p>Recorded directions: {medication.instructions}</p>}
+            {schedules.length > 0 && <div className="medication-record-subsection"><h4>Recorded schedules</h4>{schedules.map((schedule) => { const times = Array.isArray(schedule.administration_times) ? schedule.administration_times.filter((time): time is string => typeof time === "string") : []; return <div className="medication-schedule-row" key={schedule.id}><strong>{schedule.frequency}</strong><span>{schedule.status}{times.length ? ` · ${times.join(", ")}` : ""}</span>{(schedule.starts_on || schedule.ends_on) && <small>{schedule.starts_on ?? "Start not recorded"}{schedule.ends_on ? ` to ${schedule.ends_on}` : " · no end date"}</small>}{schedule.reminder_enabled && <small>Reminder flag is on, but no notification delivery is connected.</small>}</div>; })}</div>}
+            {canWrite && medication.status === "active" && <MedicationScheduleForm patientId={patientId} medicationId={medication.id} />}
+            {logs.length > 0 && <div className="medication-record-subsection"><h4>Recent dose events</h4>{logs.map((log) => <div className="medication-log-row" key={log.id}><span className="timeline-event-type">{log.status} · {log.recorded_by === user.id ? "you" : "linked user"}</span><LocalDateTime value={log.administered_at} />{log.notes && <p>{log.notes}</p>}</div>)}</div>}
+            {canWrite && <MedicationAdministrationForm patientId={patientId} medicationId={medication.id} schedules={schedules.map(({ id, frequency, status }) => ({ id, frequency, status }))} />}
+            {canWrite && <MedicationStatusForm patientId={patientId} medicationId={medication.id} status={medication.status} />}</article>; })}</div>
             : <div className="account-empty-state"><Pill size={22} /><strong>No medicine notes saved</strong><span>Add a self-reported note if this profile&apos;s active access allows writing.</span></div>}
       </section>}
       {canRead && <section className="account-card" aria-labelledby="appointments-title"><div className="account-card-heading"><div><span className="micro-label">CARE CALENDAR</span><h2 id="appointments-title">Appointments</h2><p>Saved plans are not sent to clinics or external calendars. Marking one canceled only changes this list.</p></div><span className="account-card-icon"><CalendarDays size={18} /></span></div>

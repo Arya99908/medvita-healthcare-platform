@@ -85,7 +85,31 @@ const medicationSchema = z.object({
 const medicationStatusSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   medicationId: z.string().uuid("Choose a valid medicine note."),
-  status: z.enum(["active", "historical"]),
+  status: z.enum(["active", "paused", "discontinued", "historical"]),
+});
+
+const medicationScheduleSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  medicationId: z.string().uuid("Choose a valid medicine note."),
+  frequency: z.string().trim().min(2, "Enter the frequency exactly as written in the care plan.").max(120, "Keep the frequency under 120 characters."),
+  administrationTimes: z.string().trim().optional().default(""),
+  startsOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid start date."),
+  endsOn: z.string().trim().optional().default("").refine((value) => !value || isValidDateOnly(value), "Enter a valid end date."),
+}).superRefine((value, context) => {
+  const times = value.administrationTimes ? value.administrationTimes.split(",").map((time) => time.trim()) : [];
+  if (times.length > 8 || times.some((time) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))) context.addIssue({ code: "custom", path: ["administrationTimes"], message: "Enter up to 8 valid times in 24-hour format, separated by commas." });
+  if (new Set(times).size !== times.length) context.addIssue({ code: "custom", path: ["administrationTimes"], message: "Remove duplicate administration times." });
+  if (value.startsOn && value.endsOn && value.endsOn < value.startsOn) context.addIssue({ code: "custom", path: ["endsOn"], message: "End date must be on or after the start date." });
+});
+
+const medicationAdministrationSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  medicationId: z.string().uuid("Choose a valid medicine note."),
+  scheduleId: z.string().trim().optional().default("").refine((value) => !value || z.string().uuid().safeParse(value).success, "Choose a valid schedule."),
+  status: z.enum(["taken", "missed", "skipped", "uncertain"]),
+  administeredAt: z.string().trim().refine(isValidLocalDateTime, "Enter a valid log date and time."),
+  administeredAtOffset: z.coerce.number().int().min(-840).max(840),
+  notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
 });
 
 const appointmentStatusSchema = z.object({
@@ -711,6 +735,47 @@ export async function createMedication(patientId: string, _previous: MedicationF
   return { status: "success", message: "Medicine note saved as unverified." };
 }
 
+export async function createMedicationSchedule(patientId: string, _previous: MedicationFormState, formData: FormData): Promise<MedicationFormState> {
+  const parsed = medicationScheduleSchema.safeParse({ patientId, medicationId: formData.get("medicationId"), frequency: formData.get("frequency"), administrationTimes: formData.get("administrationTimes") ?? "", startsOn: formData.get("startsOn") ?? "", endsOn: formData.get("endsOn") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the schedule details and try again." };
+  const times = parsed.data.administrationTimes ? parsed.data.administrationTimes.split(",").map((time) => time.trim()) : [];
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before adding a medicine schedule." };
+  const [{ data: relationship, error: relationshipError }, { data: medication, error: medicationError }] = await Promise.all([
+    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+    supabase.from("medication_records").select("id,status,visibility").eq("id", parsed.data.medicationId).eq("patient_id", patientId).maybeSingle(),
+  ]);
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You do not have active write access to this profile." };
+  if (medicationError || !medication || medication.status !== "active") return { status: "error", message: "Choose a current medicine note for this profile." };
+  const { error } = await supabase.from("medication_schedules").insert({ patient_id: patientId, medication_id: medication.id, frequency: parsed.data.frequency, administration_times: times, starts_on: parsed.data.startsOn || null, ends_on: parsed.data.endsOn || null, reminder_enabled: false, status: "active", visibility: medication.visibility, created_by: user.id });
+  if (error) return { status: "error", message: "The medicine schedule could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Schedule saved from the entered care plan. No reminder was created." };
+}
+
+export async function logMedicationAdministration(patientId: string, _previous: MedicationFormState, formData: FormData): Promise<MedicationFormState> {
+  const parsed = medicationAdministrationSchema.safeParse({ patientId, medicationId: formData.get("medicationId"), scheduleId: formData.get("scheduleId") ?? "", status: formData.get("status"), administeredAt: formData.get("administeredAt"), administeredAtOffset: formData.get("administeredAtOffset") ?? "0", notes: formData.get("notes") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the medicine log and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before logging medicine." };
+  const [{ data: relationship, error: relationshipError }, { data: medication, error: medicationError }] = await Promise.all([
+    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+    supabase.from("medication_records").select("id,visibility").eq("id", parsed.data.medicationId).eq("patient_id", patientId).maybeSingle(),
+  ]);
+  if (relationshipError || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "You do not have active write access to this profile." };
+  if (medicationError || !medication) return { status: "error", message: "Choose a medicine note from this profile." };
+  if (parsed.data.scheduleId) {
+    const { data: schedule, error: scheduleError } = await supabase.from("medication_schedules").select("id,status").eq("id", parsed.data.scheduleId).eq("patient_id", patientId).eq("medication_id", medication.id).maybeSingle();
+    if (scheduleError || !schedule || schedule.status !== "active") return { status: "error", message: "Choose an active schedule linked to this medicine and profile." };
+  }
+  const { error } = await supabase.from("medication_administration_logs").insert({ patient_id: patientId, medication_id: medication.id, schedule_id: parsed.data.scheduleId || null, status: parsed.data.status, administered_at: new Date(localDateTimeToUtc(parsed.data.administeredAt, parsed.data.administeredAtOffset)).toISOString(), recorded_by: user.id, notes: parsed.data.notes || null, visibility: medication.visibility });
+  if (error) return { status: "error", message: "The medicine log could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Medicine log saved as a patient or caregiver report." };
+}
+
 export async function updateMedicationStatus(patientId: string, _previous: MedicationStatusFormState, formData: FormData): Promise<MedicationStatusFormState> {
   const parsed = medicationStatusSchema.safeParse({
     patientId,
@@ -740,8 +805,21 @@ export async function updateMedicationStatus(patientId: string, _previous: Medic
     .maybeSingle();
   if (error || !data) return { status: "error", message: "This medicine note could not be updated. Check your access and try again." };
 
+  if (parsed.data.status !== "active") {
+    const { error: scheduleError } = await supabase.from("medication_schedules")
+      .update({ status: "paused", reminder_enabled: false })
+      .eq("patient_id", parsed.data.patientId)
+      .eq("medication_id", parsed.data.medicationId)
+      .eq("status", "active");
+    if (scheduleError) {
+      revalidatePath(`/account/patients/${parsed.data.patientId}`);
+      return { status: "error", message: "The medicine status changed, but its schedule could not be paused. Review the schedule before using it." };
+    }
+  }
+
   revalidatePath(`/account/patients/${parsed.data.patientId}`);
-  return { status: "success", message: parsed.data.status === "historical" ? "Medicine note marked as past or stopped." : "Medicine note listed as current." };
+  const statusMessage = parsed.data.status === "active" ? "Medicine note listed as current." : parsed.data.status === "historical" ? "Medicine note moved to history." : parsed.data.status === "discontinued" ? "Medicine note marked discontinued." : "Medicine note paused.";
+  return { status: "success", message: statusMessage };
 }
 
 export async function updateAppointmentStatus(patientId: string, _previous: AppointmentStatusFormState, formData: FormData): Promise<AppointmentStatusFormState> {

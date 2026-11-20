@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createCaregiverTask, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCaregiverTask, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMedicationSchedule, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, logMedicationAdministration, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -131,6 +131,18 @@ function medicationForm(values: Record<string, string> = {}) {
 function medicationStatusForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ medicationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "historical", ...values })) form.set(key, value);
+  return form;
+}
+
+function medicationScheduleForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ medicationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", frequency: "Twice daily as recorded", administrationTimes: "08:00, 20:00", startsOn: "2026-11-20", endsOn: "2026-11-30", ...values })) form.set(key, value);
+  return form;
+}
+
+function medicationAdministrationForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ medicationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", scheduleId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", status: "taken", administeredAt: "2026-11-20T09:00", administeredAtOffset: "-330", notes: "Fictional dose event", ...values })) form.set(key, value);
   return form;
 }
 
@@ -707,6 +719,60 @@ describe("medication server action", () => {
   });
 });
 
+describe("medication schedules and dose event actions", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("saves the entered schedule without enabling reminders", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : table === "medication_records" ? query({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "active", visibility: "general" }, error: null }) : { insert });
+    const result = await createMedicationSchedule(patientId, { status: "idle", message: "" }, medicationScheduleForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, medication_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", frequency: "Twice daily as recorded", administration_times: ["08:00", "20:00"], reminder_enabled: false, status: "active", visibility: "general", created_by: "user-1" }));
+  });
+
+  it("rejects duplicate times and schedules for inactive medicines", async () => {
+    const invalid = await createMedicationSchedule(patientId, { status: "idle", message: "" }, medicationScheduleForm({ administrationTimes: "08:00, 08:00" }));
+    expect(invalid.status).toBe("error");
+    expect(invalid.message).toMatch(/duplicate/i);
+    expect(createClient).not.toHaveBeenCalled();
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : table === "medication_records" ? query({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "discontinued", visibility: "general" }, error: null }) : { insert: vi.fn() });
+    const inactive = await createMedicationSchedule(patientId, { status: "idle", message: "" }, medicationScheduleForm());
+    expect(inactive.status).toBe("error");
+    expect(inactive.message).toMatch(/current medicine/i);
+  });
+
+  it("records a dose event with its linked active schedule and local timezone", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : table === "medication_records" ? query({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", visibility: "general" }, error: null })
+        : table === "medication_schedules" ? query({ data: { id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", status: "active" }, error: null }) : { insert });
+    const result = await logMedicationAdministration(patientId, { status: "idle", message: "" }, medicationAdministrationForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, medication_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", schedule_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", status: "taken", administered_at: "2026-11-20T03:30:00.000Z", recorded_by: "user-1", visibility: "general" }));
+  });
+
+  it("rejects a schedule that does not belong to this medication and patient", async () => {
+    const insert = vi.fn();
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_relationships"
+      ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+      : table === "medication_records" ? query({ data: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", visibility: "general" }, error: null })
+        : table === "medication_schedules" ? query({ data: null, error: null }) : { insert });
+    const result = await logMedicationAdministration(patientId, { status: "idle", message: "" }, medicationAdministrationForm());
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/active schedule linked/i);
+    expect(insert).not.toHaveBeenCalled();
+  });
+});
+
 describe("medication status server action", () => {
   beforeEach(() => {
     mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
@@ -724,8 +790,9 @@ describe("medication status server action", () => {
 
     const result = await updateMedicationStatus(patientId, { status: "idle", message: "" }, medicationStatusForm());
 
-    expect(result).toEqual({ status: "success", message: "Medicine note marked as past or stopped." });
+    expect(result).toEqual({ status: "success", message: "Medicine note moved to history." });
     expect(update.update).toHaveBeenCalledWith({ status: "historical" });
+    expect(update.update).toHaveBeenCalledWith({ status: "paused", reminder_enabled: false });
     expect(update.eq).toHaveBeenCalledWith("id", "cccccccc-cccc-4ccc-8ccc-cccccccccccc");
     expect(update.eq).toHaveBeenCalledWith("patient_id", patientId);
     expect(revalidatePath).toHaveBeenCalledWith(`/account/patients/${patientId}`);
