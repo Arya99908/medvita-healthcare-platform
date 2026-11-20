@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select extensions.plan(247);
+select extensions.plan(249);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -380,6 +380,8 @@ reset role;
 select extensions.is((select feeding_type from public.feeding_records where id='abababab-abab-4bab-8bab-abababababac'),'formula','unauthorized feeding correction leaves the record unchanged');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','22222222-2222-4222-8222-222222222222',true);
+select extensions.lives_ok($$update public.patient_profiles set display_name='Fictional patient B revised' where id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'$$,'patient can edit their own profile details');
+select extensions.is((select count(*) from public.patient_activity_events where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and resource_type='patient_profiles' and resource_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and action='record_updated' and actor_user_id='22222222-2222-4222-8222-222222222222'),1::bigint,'profile edit adds only a privacy-filtered activity event');
 select extensions.lives_ok($$update public.medical_conditions set name='Fictional corrected condition' where id='edededed-eded-4ded-8ded-edededededed'$$,'author can edit their own unverified condition record');
 select extensions.is((select count(*) from public.patient_activity_events where patient_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and resource_type='medical_conditions' and resource_id='edededed-eded-4ded-8ded-edededededed' and action='record_updated' and actor_user_id='22222222-2222-4222-8222-222222222222'),1::bigint,'condition correction remains in the privacy-filtered activity history');
 with changed as (update public.medical_conditions set name='Fictional verified edit' where id='efefefef-efef-4fef-8fef-efefefefefef' returning id)
