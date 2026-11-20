@@ -160,6 +160,20 @@ const medicalConditionSchema = z.object({
   notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
 });
 
+const caregiverTaskSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  title: z.string().trim().min(2, "Enter a short task name.").max(120, "Keep the task under 120 characters."),
+  dueAt: z.string().trim().optional().default("").refine((value) => !value || isValidLocalDateTime(value), "Enter a valid due date and time."),
+  dueAtOffset: z.coerce.number().int().min(-840).max(840),
+  notes: z.string().trim().max(500, "Keep the note under 500 characters.").optional().default(""),
+});
+
+const caregiverTaskStatusSchema = z.object({
+  patientId: z.string().uuid("Choose a valid patient profile."),
+  taskId: z.string().uuid("Choose a valid care task."),
+  status: z.enum(["open", "complete"]),
+});
+
 const menstrualSchema = z.object({
   patientId: z.string().uuid("Choose a valid patient profile."),
   periodStart: z.string().trim().refine(isValidDateOnly, "Enter a valid start date."),
@@ -427,6 +441,40 @@ export async function createMedicalCondition(patientId: string, _previous: CareL
   if (error) return { status: "error", message: "The condition note could not be saved. Check your access and try again." };
   revalidatePath(`/account/patients/${patientId}`);
   return { status: "success", message: "Condition saved as an unverified report." };
+}
+
+export async function createCaregiverTask(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = caregiverTaskSchema.safeParse({ patientId, title: formData.get("title"), dueAt: formData.get("dueAt") ?? "", dueAtOffset: formData.get("dueAtOffset") ?? "0", notes: formData.get("notes") ?? "" });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the task and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before adding a care task." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["adult", "senior"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an adult or senior profile is required." };
+  const { error } = await supabase.from("caregiver_tasks").insert({ patient_id: patientId, title: parsed.data.title, due_at: parsed.data.dueAt ? new Date(localDateTimeToUtc(parsed.data.dueAt, parsed.data.dueAtOffset)).toISOString() : null, notes: parsed.data.notes || null, assigned_to: user.id, created_by: user.id });
+  if (error) return { status: "error", message: "The care task could not be saved. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: "Care task added to this profile." };
+}
+
+export async function updateCaregiverTaskStatus(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {
+  const parsed = caregiverTaskStatusSchema.safeParse({ patientId, taskId: formData.get("taskId"), status: formData.get("status") });
+  if (!parsed.success) return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the task and try again." };
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { status: "error", message: "Sign in again before updating this care task." };
+  const [{ data: profile, error: profileError }, { data: relationship, error: relationshipError }] = await Promise.all([
+    supabase.from("patient_profiles").select("id,life_stage").eq("id", patientId).maybeSingle(),
+    supabase.from("patient_relationships").select("status,can_read,can_write").eq("patient_id", patientId).eq("user_id", user.id).maybeSingle(),
+  ]);
+  if (profileError || relationshipError || !profile || !["adult", "senior"].includes(profile.life_stage) || relationship?.status !== "active" || !relationship.can_read || !relationship.can_write) return { status: "error", message: "Active write access to an adult or senior profile is required." };
+  const { data, error } = await supabase.from("caregiver_tasks").update({ status: parsed.data.status }).eq("id", parsed.data.taskId).eq("patient_id", patientId).select("id").maybeSingle();
+  if (error || !data) return { status: "error", message: "This care task could not be updated. Check your access and try again." };
+  revalidatePath(`/account/patients/${patientId}`);
+  return { status: "success", message: parsed.data.status === "complete" ? "Care task marked complete." : "Care task reopened." };
 }
 
 export async function createMenstrualRecord(patientId: string, _previous: CareLogFormState, formData: FormData): Promise<CareLogFormState> {

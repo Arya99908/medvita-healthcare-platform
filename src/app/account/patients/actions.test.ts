@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { createAppointment, createBowelMovementRecord, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
+import { createAppointment, createBowelMovementRecord, createCaregiverTask, createDevelopmentalMilestone, createFeedingRecord, createGrowthRecord, createHealthEvent, createMedicalCondition, createMedication, createMenstrualRecord, createSleepRecord, createSymptomObservation, createUrinationRecord, createVaccinationRecord, createVitalRecord, createVomitingRecord, updateAppointmentStatus, updateCaregiverTaskStatus, updateMedicationStatus, uploadPatientDocument } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -77,6 +77,12 @@ function vitalForm(values: Record<string, string> = {}) {
 function conditionForm(values: Record<string, string> = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ name: "Hypertension", status: "active", diagnosedOn: "2020-01-02", notes: "Fictional sample", ...values })) form.set(key, value);
+  return form;
+}
+
+function careTaskForm(values: Record<string, string> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ title: "Prepare for appointment", dueAt: "2026-11-20T09:00", dueAtOffset: "-330", notes: "Fictional reminder", ...values })) form.set(key, value);
   return form;
 }
 
@@ -389,6 +395,65 @@ describe("adult and senior condition server action", () => {
     const invalid = await createMedicalCondition(patientId, { status: "idle", message: "" }, conditionForm({ diagnosedOn: "2026-02-30" }));
     expect(invalid.status).toBe("error");
     expect(invalid.message).toMatch(/valid diagnosis date/i);
+  });
+});
+
+describe("adult and senior caregiver task actions", () => {
+  beforeEach(() => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "senior" }, error: null })
+      : table === "patient_relationships"
+        ? query({ data: { status: "active", can_read: true, can_write: true }, error: null })
+        : { insert: vi.fn().mockResolvedValue({ error: null }) });
+    vi.mocked(createClient).mockResolvedValue(mockSupabase as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  it("creates a task for the signed-in user and preserves the local due time", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "senior" }, error: null })
+      : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { insert });
+    const result = await createCaregiverTask(patientId, { status: "idle", message: "" }, careTaskForm());
+    expect(result.status).toBe("success");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ patient_id: patientId, title: "Prepare for appointment", due_at: "2026-11-20T03:30:00.000Z", assigned_to: "user-1", created_by: "user-1" }));
+  });
+
+  it("does not create a task for a child or a read-only relationship", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: false }, error: null }) : { insert });
+    const result = await createCaregiverTask(patientId, { status: "idle", message: "" }, careTaskForm());
+    expect(result.status).toBe("error");
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("updates task status only after verifying active write access", async () => {
+    const update = vi.fn(() => ({ eq: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }, error: null }) }));
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "adult" }, error: null })
+      : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { update });
+    const form = new FormData();
+    form.set("taskId", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    form.set("status", "complete");
+    const result = await updateCaregiverTaskStatus(patientId, { status: "idle", message: "" }, form);
+    expect(result.status).toBe("success");
+    expect(update).toHaveBeenCalledWith({ status: "complete" });
+  });
+
+  it("does not update a task outside an adult or senior profile", async () => {
+    const update = vi.fn();
+    mockSupabase.from.mockImplementation((table: string) => table === "patient_profiles"
+      ? query({ data: { id: patientId, life_stage: "child" }, error: null })
+      : table === "patient_relationships" ? query({ data: { status: "active", can_read: true, can_write: true }, error: null }) : { update });
+    const form = new FormData();
+    form.set("taskId", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    form.set("status", "complete");
+    const result = await updateCaregiverTaskStatus(patientId, { status: "idle", message: "" }, form);
+    expect(result.status).toBe("error");
+    expect(update).not.toHaveBeenCalled();
   });
 });
 
